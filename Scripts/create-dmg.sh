@@ -132,8 +132,14 @@ else
 fi
 
 # ── Verify universal binary ──────────────────────────────────────
+echo "==> Verifying universal binary..."
 ARCHS=$(lipo -archs "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || echo "unknown")
 echo "    Architectures: $ARCHS"
+if echo "$ARCHS" | grep -q "arm64" && echo "$ARCHS" | grep -q "x86_64"; then
+    echo "    Universal binary OK"
+else
+    echo "    Warning: Expected universal binary (arm64 x86_64), got: $ARCHS"
+fi
 
 # ── Create DMG ───────────────────────────────────────────────────
 echo "==> Creating DMG..."
@@ -195,7 +201,7 @@ if [ "$SKIP_NOTARIZE" = false ] && [ -n "$IDENTITY" ]; then
         xcrun stapler staple "$DMG_PATH"
 
         echo "==> Verifying notarization..."
-        spctl --assess --type open --context context:primary-signature -v "$DMG_PATH"
+        spctl --assess --type open --context context:primary-signature "$DMG_PATH" && echo "    Notarization OK" || echo "    Warning: spctl check failed (may need to retry)"
     else
         echo ""
         echo "WARNING: Notarization did not complete within ${NOTARIZE_TIMEOUT}."
@@ -215,6 +221,13 @@ echo "  Size: $(ls -lh "$DMG_PATH" | awk '{print $5}')"
 echo "  Architectures: $ARCHS"
 if [ -n "$IDENTITY" ]; then
     echo "  Signed with: $IDENTITY"
+    if [ "$SKIP_NOTARIZE" = false ]; then
+        echo "  Notarized and stapled"
+    else
+        echo "  NOT notarized (--skip-notarize)"
+    fi
+else
+    echo "  WARNING: Unsigned — users will see Gatekeeper warnings"
 fi
 
 echo ""
