@@ -5,11 +5,15 @@ import SwiftUI
 /// written, downloaded, and by which AI tools.
 struct AIActivityModeView: View {
     @Environment(MonitoringStore.self) private var store
+    @State private var toolConfigs: [AIToolConfig] = []
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 summaryHeader
+                if !toolConfigs.isEmpty {
+                    permissionsSection
+                }
                 if !activeAIProcesses.isEmpty {
                     aiProcessSection
                 }
@@ -19,6 +23,9 @@ struct AIActivityModeView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            toolConfigs = AISettingsReader.discoverAll()
+        }
     }
 
     // MARK: - Active AI Processes
@@ -102,6 +109,24 @@ struct AIActivityModeView: View {
             parts.append("\(formatted)/s total I/O")
         }
         return parts.joined(separator: " · ")
+    }
+
+    // MARK: - Permissions Section
+
+    @ViewBuilder
+    private var permissionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "lock.shield")
+                    .foregroundStyle(.cyan)
+                Text("AI Agent Permissions")
+                    .font(.headline)
+            }
+
+            ForEach(toolConfigs, id: \.tool) { config in
+                AIPermissionsCard(config: config)
+            }
+        }
     }
 
     // MARK: - AI Process Section
@@ -223,6 +248,161 @@ struct AIActivityModeView: View {
     }
 
     // MARK: - Helpers
+
+    private func shortenPath(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if path.hasPrefix(home) {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
+    }
+}
+
+// MARK: - AI Permissions Card
+
+private struct AIPermissionsCard: View {
+    let config: AIToolConfig
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Header
+            Button {
+                withAnimation { expanded.toggle() }
+            } label: {
+                HStack {
+                    Image(systemName: "lock.shield")
+                        .foregroundStyle(.cyan)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(config.tool)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.primary)
+                            Text("· \(config.provider)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("\(config.layers.count) config layer\(config.layers.count == 1 ? "" : "s") · \(config.permissions.totalAllowed) allowed · \(config.permissions.totalDenied) denied · \(config.permissions.totalAsk) ask")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(.tertiary)
+                        .font(.caption)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Summary bullets (always visible)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(config.summary, id: \.self) { line in
+                    HStack(alignment: .top, spacing: 6) {
+                        Text("·")
+                            .foregroundStyle(.cyan)
+                        Text(line)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            // Expanded detail
+            if expanded {
+                VStack(alignment: .leading, spacing: 12) {
+                    Divider()
+
+                    // Config layers
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Configuration Layers")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.tertiary)
+                        ForEach(config.layers, id: \.path) { layer in
+                            HStack(spacing: 6) {
+                                Image(systemName: "doc.text")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                Text(layer.label)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                Text(shortenPath(layer.path))
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                        }
+                    }
+
+                    // Permission groups
+                    if !config.permissions.allowed.isEmpty {
+                        permissionGroupSection("Auto-Allowed", groups: config.permissions.allowed, color: .green)
+                    }
+                    if !config.permissions.requiresApproval.isEmpty {
+                        permissionGroupSection("Requires Approval", groups: config.permissions.requiresApproval, color: .yellow)
+                    }
+                    if !config.permissions.denied.isEmpty {
+                        permissionGroupSection("Blocked", groups: config.permissions.denied, color: .red)
+                    }
+
+                    // MCP servers
+                    if !config.mcpServers.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("MCP Servers")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.tertiary)
+                            ForEach(config.mcpServers, id: \.self) { server in
+                                HStack(spacing: 4) {
+                                    Image(systemName: "server.rack")
+                                        .font(.caption2)
+                                        .foregroundStyle(.cyan)
+                                    Text(server)
+                                        .font(.caption)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(.background, in: .rect(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(.cyan.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func permissionGroupSection(_ title: String, groups: [PermissionGroup], color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 6, height: 6)
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.tertiary)
+            }
+            ForEach(groups, id: \.category) { group in
+                HStack(alignment: .top, spacing: 6) {
+                    Text(group.category)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .frame(width: 100, alignment: .trailing)
+                    Text(group.items.prefix(5).joined(separator: ", ") +
+                         (group.items.count > 5 ? " +\(group.items.count - 5) more" : ""))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+        }
+    }
 
     private func shortenPath(_ path: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
