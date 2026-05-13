@@ -11,6 +11,11 @@ struct VigilApp: App {
                 .environment(monitoringStore)
         }
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Vigil") {
+                    openWindow(id: "about")
+                }
+            }
             CommandGroup(replacing: .help) {
                 Button("Vigil Help") {
                     openWindow(id: "help")
@@ -24,6 +29,11 @@ struct VigilApp: App {
                 .environment(monitoringStore)
         }
         .menuBarExtraStyle(.window)
+
+        Window("About Vigil", id: "about") {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
 
         Window("Vigil Help", id: "help") {
             HelpView()

@@ -116,28 +116,6 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private func healthRing(score: Int, level: HeuristicsResult.HealthLevel) -> some View {
-        ZStack {
-            Circle()
-                .stroke(.quaternary, lineWidth: 4)
-                .frame(width: 40, height: 40)
-            Circle()
-                .trim(from: 0, to: Double(score) / 100.0)
-                .stroke(healthColor(level), style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .frame(width: 40, height: 40)
-            Text("\(score)")
-                .font(.caption)
-                .fontWeight(.bold)
-                .monospacedDigit()
-        }
-    }
-
-    private func healthColor(_ level: HeuristicsResult.HealthLevel) -> Color {
-        switch level {
-        case .good: .green
-        case .fair: .yellow
-        case .concerning: .orange
-        case .poor: .red
-        }
+        HealthRing(score: score, level: level, size: 40, lineWidth: 4)
     }
 }

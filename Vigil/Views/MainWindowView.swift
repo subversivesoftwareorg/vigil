@@ -4,7 +4,7 @@ import SwiftUI
 /// Provides mode switching between the four visualization modes.
 struct MainWindowView: View {
     @Environment(MonitoringStore.self) private var store
-    @State private var selectedMode: ViewMode = .simple
+    @State private var selectedMode: ViewMode = .overview
 
     var body: some View {
         NavigationSplitView {
@@ -15,14 +15,14 @@ struct MainWindowView: View {
             .navigationSplitViewColumnWidth(min: 160, ideal: 180)
         } detail: {
             switch selectedMode {
-            case .simple:
-                SimpleModeView()
-            case .expert:
-                ExpertModeView()
-            case .heuristics:
-                HeuristicsModeView()
-            case .reporting:
-                ReportingModeView()
+            case .overview:
+                OverviewModeView()
+            case .processes:
+                ProcessesModeView()
+            case .fileActivity:
+                FileActivityModeView()
+            case .history:
+                HistoryModeView()
             }
         }
         .navigationTitle("Vigil")
@@ -40,28 +40,28 @@ struct MainWindowView: View {
 // MARK: - View Mode
 
 enum ViewMode: String, CaseIterable, Identifiable {
-    case simple
-    case expert
-    case heuristics
-    case reporting
+    case overview
+    case processes
+    case fileActivity
+    case history
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .simple: "Simple"
-        case .expert: "Expert"
-        case .heuristics: "Heuristics"
-        case .reporting: "Reporting"
+        case .overview: "Overview"
+        case .processes: "Processes"
+        case .fileActivity: "File Activity"
+        case .history: "History"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .simple: "gauge.with.dots.needle.bottom.50percent"
-        case .expert: "terminal"
-        case .heuristics: "brain"
-        case .reporting: "chart.bar"
+        case .overview: "square.grid.2x2"
+        case .processes: "cpu"
+        case .fileActivity: "doc.text.magnifyingglass"
+        case .history: "clock.arrow.circlepath"
         }
     }
 }

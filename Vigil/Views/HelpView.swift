@@ -25,38 +25,38 @@ struct HelpView: View {
 
                 Divider()
 
-                // Tabs
+                // Modes
                 VStack(alignment: .leading, spacing: 20) {
                     Text("The Four Modes")
                         .font(.title2)
                         .fontWeight(.bold)
 
                     HelpSection(
-                        icon: "gauge.with.dots.needle.bottom.50percent",
+                        icon: "square.grid.2x2",
                         color: .blue,
-                        title: "Simple",
-                        description: "A clean overview showing how many processes are running and how much file activity is happening. Start here if you just want to know everything's normal."
+                        title: "Overview",
+                        description: "Your dashboard. Shows system health at a glance — a health score, any concerns Vigil has found, a breakdown of what's running (system services, Apple apps, third-party apps, unrecognized), and a summary of recent file activity. Start here."
                     )
 
                     HelpSection(
-                        icon: "terminal",
+                        icon: "cpu",
                         color: .green,
-                        title: "Expert",
-                        description: "The full picture. See every running process with its memory usage, disk I/O rates, and category. Click a process to open the inspector panel with detailed information — what it does, how much it's reading and writing, and whether its behavior is normal. The right pane shows real-time file system events."
+                        title: "Processes",
+                        description: "Everything running on your Mac. Each process shows what it is, what category it belongs to, and how it's behaving. Click any process to open the inspector with full details — memory, disk I/O, energy usage, and whether its behavior is normal. Sort by name, memory, I/O, or category."
                     )
 
                     HelpSection(
-                        icon: "brain",
+                        icon: "doc.text.magnifyingglass",
                         color: .purple,
-                        title: "Heuristics",
-                        description: "Automated analysis in plain English. Vigil runs six checks against your system and tells you what it found — like an unrecognized process doing heavy disk work, or a critical system process that's missing. Each finding includes an explanation and a recommendation. The health score gives you a quick gut-feel number."
+                        title: "File Activity",
+                        description: "What's happening on your disk. See files being created, modified, and deleted in real time. Group by directory to find hot spots, or switch to timeline view. Vigil attributes file changes to known apps where possible — so you can see that Chrome is writing to its cache, or Xcode is producing build output."
                     )
 
                     HelpSection(
-                        icon: "chart.bar",
+                        icon: "clock.arrow.circlepath",
                         color: .orange,
-                        title: "Reporting",
-                        description: "Long-term behavioral trends. Vigil saves daily I/O statistics for every process and compares them across time windows — 7 days vs 30 days, 30 vs 90, 90 vs 365. This surfaces processes that have changed behavior over time, which can reveal software updates, new background activity, or gradual resource creep."
+                        title: "History",
+                        description: "The full analysis. Shows current anomalies (unrecognized processes with high I/O, missing system processes, behavioral outliers) alongside long-term trends. Vigil compares each process's recent activity against its historical baseline and tells you in plain language what's changed — like \"Writing 5x more than its 30-day average.\""
                     )
                 }
 
@@ -105,13 +105,13 @@ struct HelpView: View {
                     Text("The health score starts at 100 and decreases based on findings:")
 
                     VStack(alignment: .leading, spacing: 8) {
-                        ScoreRow(range: "90–100", label: "Good", color: .green,
+                        ScoreRow(range: "90-100", label: "Good", color: .green,
                                  description: "Everything looks normal")
-                        ScoreRow(range: "70–89", label: "Fair", color: .yellow,
+                        ScoreRow(range: "70-89", label: "Fair", color: .yellow,
                                  description: "A few informational findings")
-                        ScoreRow(range: "50–69", label: "Concerning", color: .orange,
+                        ScoreRow(range: "50-69", label: "Concerning", color: .orange,
                                  description: "Multiple warnings worth reviewing")
-                        ScoreRow(range: "0–49", label: "Poor", color: .red,
+                        ScoreRow(range: "0-49", label: "Poor", color: .red,
                                  description: "Critical findings need attention")
                     }
                 }
