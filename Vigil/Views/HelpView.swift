@@ -60,6 +60,13 @@ struct HelpView: View {
                     )
 
                     HelpSection(
+                        icon: "icloud.and.arrow.up.and.arrow.down",
+                        color: .indigo,
+                        title: "File Sharing",
+                        description: "Track cloud sync and backup activity. See which tools are running (Dropbox, OneDrive, Google Drive, iCloud, Time Machine, and more), what files they're syncing, and how much data they're moving. Helps you understand what's being shared and backed up from your Mac."
+                    )
+
+                    HelpSection(
                         icon: "clock.arrow.circlepath",
                         color: .orange,
                         title: "History",

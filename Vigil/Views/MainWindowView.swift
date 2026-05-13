@@ -25,6 +25,8 @@ struct MainWindowView: View {
                 HistoryModeView()
             case .aiActivity:
                 AIActivityModeView()
+            case .fileSharing:
+                FileSharingModeView()
             }
         }
         .navigationTitle("Vigil")
@@ -46,6 +48,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
     case processes
     case fileActivity
     case aiActivity
+    case fileSharing
     case history
 
     var id: String { rawValue }
@@ -56,6 +59,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .processes: "Processes"
         case .fileActivity: "File Activity"
         case .aiActivity: "AI Activity"
+        case .fileSharing: "File Sharing"
         case .history: "History"
         }
     }
@@ -66,6 +70,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .processes: "cpu"
         case .fileActivity: "doc.text.magnifyingglass"
         case .aiActivity: "brain"
+        case .fileSharing: "icloud.and.arrow.up.and.arrow.down"
         case .history: "clock.arrow.circlepath"
         }
     }

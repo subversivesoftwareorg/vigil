@@ -47,6 +47,8 @@ struct AboutView: View {
                         desc: "What's happening on disk")
                 modeRow(icon: "brain", color: .cyan, name: "AI Activity",
                         desc: "AI tools and their impact on your Mac")
+                modeRow(icon: "icloud.and.arrow.up.and.arrow.down", color: .indigo, name: "File Sharing",
+                        desc: "Cloud sync, backup, and transfer activity")
                 modeRow(icon: "clock.arrow.circlepath", color: .orange, name: "History",
                         desc: "Trends and anomalies over time")
             }
