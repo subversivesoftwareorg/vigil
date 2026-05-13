@@ -4,7 +4,6 @@ import SwiftUI
 /// — answering "has anything changed?" Combines the Heuristics and Reporting engines.
 struct HistoryModeView: View {
     @Environment(MonitoringStore.self) private var store
-    @State private var heuristicsResult: HeuristicsResult?
     @State private var reports: [BehaviorReport] = []
     @State private var isLoadingReports = false
     @State private var showPassedChecks = false
@@ -12,7 +11,7 @@ struct HistoryModeView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                if let result = heuristicsResult {
+                if let result = store.latestAnalysis {
                     healthHeader(result)
                     processCensus(result)
 
@@ -34,13 +33,13 @@ struct HistoryModeView: View {
             .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: store.processes.count) {
-            await refreshAll()
+        .task {
+            await loadReports()
         }
         .toolbar {
             ToolbarItem {
                 Button {
-                    Task { await refreshAll() }
+                    Task { await loadReports() }
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
@@ -49,20 +48,12 @@ struct HistoryModeView: View {
     }
 
     @MainActor
-    private func refreshAll() async {
-        let engine = HeuristicsEngine(
-            processes: store.processes,
-            ioRates: store.ioRates,
-            baseline: store.ioBaseline
-        )
-        heuristicsResult = engine.analyze()
-
-        if let db = store.database {
-            isLoadingReports = true
-            let reportEngine = ReportingEngine(database: db)
-            reports = reportEngine.analyzeBehaviorChanges()
-            isLoadingReports = false
-        }
+    private func loadReports() async {
+        guard let db = store.database else { return }
+        isLoadingReports = true
+        let reportEngine = ReportingEngine(database: db)
+        reports = reportEngine.analyzeBehaviorChanges()
+        isLoadingReports = false
     }
 
     // MARK: - Health Header

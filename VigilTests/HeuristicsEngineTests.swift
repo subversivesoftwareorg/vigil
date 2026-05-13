@@ -118,7 +118,8 @@ struct HeuristicsEngineTests {
         let engine = HeuristicsEngine(processes: [], ioRates: [:], baseline: IOBaseline())
         let result = engine.analyze()
 
-        // Missing all essentials = many warning findings
-        #expect(result.healthScore < 50)
+        // Missing all visible essentials = warning findings that lower the score
+        #expect(result.healthScore < 60)
+        #expect(result.healthLevel == .concerning || result.healthLevel == .poor)
     }
 }

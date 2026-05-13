@@ -15,6 +15,10 @@ final class MonitoringStore {
     /// The baseline tracker for building "normal" I/O profiles per process.
     let ioBaseline = IOBaseline()
 
+    /// Cached heuristics analysis — recomputed each process snapshot so all views
+    /// see the same health score and findings.
+    private(set) var latestAnalysis: HeuristicsResult?
+
     /// Database for persistent storage of daily I/O aggregates.
     private(set) var database: Database?
 
@@ -107,6 +111,10 @@ final class MonitoringStore {
         processes = snapshot
         ioRates = newRates
         previousSnapshots = Dictionary(uniqueKeysWithValues: snapshot.map { ($0.pid, $0) })
+
+        // Recompute heuristics so all views share the same result
+        let engine = HeuristicsEngine(processes: processes, ioRates: ioRates, baseline: ioBaseline)
+        latestAnalysis = engine.analyze()
 
         // Periodic flush to SQLite
         if Date.now.timeIntervalSince(lastFlush) >= Self.flushInterval {

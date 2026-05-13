@@ -4,7 +4,6 @@ import SwiftUI
 /// and summarized activity — answering "is my Mac healthy right now?"
 struct OverviewModeView: View {
     @Environment(MonitoringStore.self) private var store
-    @State private var result: HeuristicsResult?
 
     var body: some View {
         ScrollView {
@@ -15,7 +14,7 @@ struct OverviewModeView: View {
                     description: Text("Gathering process information...")
                 )
                 .frame(maxHeight: .infinity)
-            } else if let result {
+            } else if let result = store.latestAnalysis {
                 VStack(spacing: 24) {
                     healthHeader(result)
                     if !result.findings.isEmpty {
@@ -33,19 +32,6 @@ struct OverviewModeView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: store.processes.count) {
-            await refreshAnalysis()
-        }
-    }
-
-    @MainActor
-    private func refreshAnalysis() async {
-        let engine = HeuristicsEngine(
-            processes: store.processes,
-            ioRates: store.ioRates,
-            baseline: store.ioBaseline
-        )
-        result = engine.analyze()
     }
 
     // MARK: - Health Header

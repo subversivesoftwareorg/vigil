@@ -45,6 +45,8 @@ struct AboutView: View {
                         desc: "What's running and why")
                 modeRow(icon: "doc.text.magnifyingglass", color: .purple, name: "File Activity",
                         desc: "What's happening on disk")
+                modeRow(icon: "brain", color: .cyan, name: "AI Activity",
+                        desc: "AI tools and their impact on your Mac")
                 modeRow(icon: "clock.arrow.circlepath", color: .orange, name: "History",
                         desc: "Trends and anomalies over time")
             }

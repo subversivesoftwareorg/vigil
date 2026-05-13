@@ -53,6 +53,13 @@ struct HelpView: View {
                     )
 
                     HelpSection(
+                        icon: "brain",
+                        color: .cyan,
+                        title: "AI Activity",
+                        description: "See the impact of AI on your Mac. Vigil identifies running AI processes (Claude Code, Copilot, Ollama, ChatGPT, and more), tracks files they touch, and flags model file downloads. You can see exactly how much data AI tools are reading and writing in real time."
+                    )
+
+                    HelpSection(
                         icon: "clock.arrow.circlepath",
                         color: .orange,
                         title: "History",

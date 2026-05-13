@@ -3,7 +3,8 @@ import SwiftUI
 /// Compact menu bar popover showing system health at a glance.
 struct MenuBarView: View {
     @Environment(MonitoringStore.self) private var store
-    @State private var result: HeuristicsResult?
+
+    private var result: HeuristicsResult? { store.latestAnalysis }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -29,7 +30,7 @@ struct MenuBarView: View {
             if let result {
                 // Health score
                 HStack(spacing: 12) {
-                    healthRing(score: result.healthScore, level: result.healthLevel)
+                    HealthRing(score: result.healthScore, level: result.healthLevel, size: 40, lineWidth: 4)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("System Health: \(result.healthLevel.rawValue)")
                             .font(.body)
@@ -99,23 +100,5 @@ struct MenuBarView: View {
         }
         .padding(12)
         .frame(width: 280)
-        .task(id: store.processes.count) {
-            await refreshAnalysis()
-        }
-    }
-
-    @MainActor
-    private func refreshAnalysis() async {
-        let engine = HeuristicsEngine(
-            processes: store.processes,
-            ioRates: store.ioRates,
-            baseline: store.ioBaseline
-        )
-        result = engine.analyze()
-    }
-
-    @ViewBuilder
-    private func healthRing(score: Int, level: HeuristicsResult.HealthLevel) -> some View {
-        HealthRing(score: score, level: level, size: 40, lineWidth: 4)
     }
 }

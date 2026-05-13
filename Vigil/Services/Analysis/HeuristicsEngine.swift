@@ -68,22 +68,30 @@ struct HeuristicsEngine {
     // MARK: - Check: Missing Essential Processes
 
     private func checkMissingEssentials() -> [Finding] {
+        // Only check for processes that are reliably visible from user space.
+        // kernel_task (PID 0) is not enumerable via proc_listallpids, and some
+        // privileged daemons (securityd, trustd, logd) may fail both proc_pidinfo
+        // and proc_name, making them invisible to user-space monitoring.
+        // We check process names AND raw names since displayName uses the path's
+        // last component when available.
         let essentials = [
-            "kernel_task", "launchd", "WindowServer", "Dock", "Finder",
-            "securityd", "trustd", "mDNSResponder", "configd", "logd"
+            "launchd", "WindowServer", "Dock", "Finder",
+            "mDNSResponder", "configd"
         ]
 
         let runningNames = Set(processes.map(\.displayName))
+        let runningRawNames = Set(processes.map(\.name))
+        let allNames = runningNames.union(runningRawNames)
 
         return essentials.compactMap { name -> Finding? in
-            guard !runningNames.contains(name) else { return nil }
+            guard !allNames.contains(name) else { return nil }
 
             return Finding(
                 id: "missing-essential-\(name)",
                 severity: .warning,
                 check: .missingEssential,
                 title: "\(name) is not running",
-                description: "\(name) is a core system process that is expected to always be running. Its absence could indicate a system issue or that something has stopped it.",
+                description: "\(name) is a core system process that is expected to always be running and is normally visible to Vigil. Its absence could indicate a system issue.",
                 recommendation: "This is unusual. If your Mac is behaving normally otherwise, it may be a temporary state. If you're experiencing issues, consider restarting your Mac.",
                 affectedProcess: name,
                 affectedPid: nil
