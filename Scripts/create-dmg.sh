@@ -232,4 +232,16 @@ fi
 
 echo ""
 echo "Build number $NEW_BUILD has been written to Resources/Info.plist."
-echo "Remember to commit this change if you want to keep it."
+
+# ── Git tag ──────────────────────────────────────────────────────
+TAG="v${VERSION}-b${NEW_BUILD}"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git add "$PLIST"
+    git commit -m "Build $NEW_BUILD for v$VERSION distribution" 2>/dev/null || true
+    git tag -a "$TAG" -m "$APP_NAME $VERSION build $NEW_BUILD"
+    echo "  Tagged: $TAG"
+    echo ""
+    echo "Push with: git push && git push --tags"
+else
+    echo "Not in a git repo — skipping tag."
+fi
