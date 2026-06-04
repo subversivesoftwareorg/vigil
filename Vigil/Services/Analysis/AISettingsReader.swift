@@ -29,15 +29,19 @@ enum AISettingsReader {
 
     private static func readClaudeSettings() -> AIToolConfig? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let cwd = FileManager.default.currentDirectoryPath
 
-        // Claude settings layers (lowest → highest priority)
-        let layers: [(path: String, label: String)] = [
+        // Global settings layers
+        var layers: [(path: String, label: String)] = [
             ("\(home)/.claude/settings.json", "User global"),
             ("\(home)/.claude/settings.local.json", "User local"),
-            ("\(cwd)/.claude/settings.json", "Project"),
-            ("\(cwd)/.claude/settings.local.json", "Project local"),
         ]
+
+        // Discover project-level settings from common code directories
+        for root in discoverProjectRoots(marker: ".claude/settings.json") {
+            let projectName = URL(fileURLWithPath: root).lastPathComponent
+            layers.append(("\(root)/.claude/settings.json", "Project: \(projectName)"))
+            layers.append(("\(root)/.claude/settings.local.json", "Project local: \(projectName)"))
+        }
 
         var foundLayers: [SettingsLayer] = []
         var mergedAllow: [String] = []
@@ -132,24 +136,75 @@ enum AISettingsReader {
 
     private static func readAiderSettings() -> AIToolConfig? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let cwd = FileManager.default.currentDirectoryPath
-        let paths = ["\(home)/.aider.conf.yml", "\(cwd)/.aider.conf.yml"]
+        var configPaths: [SettingsLayer] = []
 
-        for path in paths {
-            if FileManager.default.fileExists(atPath: path) {
-                return AIToolConfig(
-                    tool: "Aider",
-                    provider: "Open Source",
-                    layers: [SettingsLayer(path: path, label: "Config")],
-                    permissions: PermissionSummary(allowed: [], denied: [], requiresApproval: []),
-                    envVarCount: 0,
-                    mcpServers: [],
-                    hasHooks: false,
-                    summary: ["Aider configuration found. Aider can read and edit files in the current project."]
-                )
+        // Global config
+        let globalPath = "\(home)/.aider.conf.yml"
+        if FileManager.default.fileExists(atPath: globalPath) {
+            configPaths.append(SettingsLayer(path: globalPath, label: "User global"))
+        }
+
+        // Project-level configs discovered from common code directories
+        for root in discoverProjectRoots(marker: ".aider.conf.yml") {
+            let projectName = URL(fileURLWithPath: root).lastPathComponent
+            configPaths.append(SettingsLayer(path: "\(root)/.aider.conf.yml", label: "Project: \(projectName)"))
+        }
+
+        guard !configPaths.isEmpty else { return nil }
+
+        return AIToolConfig(
+            tool: "Aider",
+            provider: "Open Source",
+            layers: configPaths,
+            permissions: PermissionSummary(allowed: [], denied: [], requiresApproval: []),
+            envVarCount: 0,
+            mcpServers: [],
+            hasHooks: false,
+            summary: ["Aider configuration found across \(configPaths.count) location\(configPaths.count == 1 ? "" : "s")."]
+        )
+    }
+
+    // MARK: - Project Root Discovery
+
+    /// Scan common code directories for project roots containing a marker file.
+    /// Searches 2 levels deep under well-known parent directories.
+    private static func discoverProjectRoots(marker: String) -> [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let commonParents = [
+            "\(home)/code", "\(home)/Code",
+            "\(home)/Developer", "\(home)/dev",
+            "\(home)/projects", "\(home)/Projects",
+            "\(home)/src", "\(home)/repos",
+            "\(home)/workspace", "\(home)/Workspace",
+        ]
+
+        let fm = FileManager.default
+        var roots: [String] = []
+
+        for parent in commonParents {
+            guard let children = try? fm.contentsOfDirectory(atPath: parent) else { continue }
+            for child in children where !child.hasPrefix(".") {
+                let projectPath = "\(parent)/\(child)"
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: projectPath, isDirectory: &isDir), isDir.boolValue else { continue }
+                if fm.fileExists(atPath: "\(projectPath)/\(marker)") {
+                    roots.append(projectPath)
+                    continue
+                }
+                // One level deeper for org/workspace structures (e.g., ~/code/org/repo)
+                guard let grandchildren = try? fm.contentsOfDirectory(atPath: projectPath) else { continue }
+                for grandchild in grandchildren where !grandchild.hasPrefix(".") {
+                    let nestedPath = "\(projectPath)/\(grandchild)"
+                    var nestedIsDir: ObjCBool = false
+                    guard fm.fileExists(atPath: nestedPath, isDirectory: &nestedIsDir), nestedIsDir.boolValue else { continue }
+                    if fm.fileExists(atPath: "\(nestedPath)/\(marker)") {
+                        roots.append(nestedPath)
+                    }
+                }
             }
         }
-        return nil
+
+        return roots
     }
 
     // MARK: - Permission Categorization

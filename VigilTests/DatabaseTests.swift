@@ -72,6 +72,71 @@ struct DatabaseTests {
         #expect(abs(read.mean - 200.0) < 0.001)
     }
 
+    // MARK: - AI Inventory
+
+    @Test("AI inventory upsert and load round-trips correctly")
+    func aiInventoryRoundTrip() throws {
+        let db = try makeDB()
+
+        let entry = AIInventoryEntry(
+            toolID: "claude-code",
+            displayName: "Claude Code",
+            provider: "Anthropic",
+            category: "Coding Assistant",
+            firstSeen: Date(timeIntervalSinceReferenceDate: 800_000_000),
+            lastSeen: Date(timeIntervalSinceReferenceDate: 800_000_000),
+            observationCount: 42,
+            highestConfidence: .high,
+            bestBasis: .observed,
+            lastReason: "Exact process name match",
+            processNames: ["claude", "claude-code"]
+        )
+
+        db.upsertAIInventory(entry)
+        let loaded = db.loadAllAIInventory()
+        #expect(loaded.count == 1)
+        #expect(loaded.first?.toolID == "claude-code")
+        #expect(loaded.first?.displayName == "Claude Code")
+        #expect(loaded.first?.observationCount == 42)
+        #expect(loaded.first?.highestConfidence == .high)
+        #expect(loaded.first?.bestBasis == .observed)
+        #expect(loaded.first?.processNames.contains("claude") == true)
+        #expect(loaded.first?.processNames.contains("claude-code") == true)
+    }
+
+    @Test("AI inventory upsert updates existing entry")
+    func aiInventoryUpdate() throws {
+        let db = try makeDB()
+
+        var entry = AIInventoryEntry(
+            toolID: "ollama",
+            displayName: "Ollama",
+            provider: "Local",
+            category: "Local Model Runner",
+            firstSeen: Date(timeIntervalSinceReferenceDate: 800_000_000),
+            lastSeen: Date(timeIntervalSinceReferenceDate: 800_000_000),
+            observationCount: 10,
+            highestConfidence: .medium,
+            bestBasis: .inferred,
+            lastReason: "Path match",
+            processNames: ["ollama"]
+        )
+        db.upsertAIInventory(entry)
+
+        entry.observationCount = 25
+        entry.highestConfidence = .high
+        entry.bestBasis = .observed
+        entry.processNames.insert("ollama-runner")
+        db.upsertAIInventory(entry)
+
+        let loaded = db.loadAllAIInventory()
+        #expect(loaded.count == 1)
+        #expect(loaded.first?.observationCount == 25)
+        #expect(loaded.first?.highestConfidence == .high)
+        #expect(loaded.first?.bestBasis == .observed)
+        #expect(loaded.first?.processNames.count == 2)
+    }
+
     @Test("processNames returns distinct names in range")
     func processNamesInRange() throws {
         let db = try makeDB()

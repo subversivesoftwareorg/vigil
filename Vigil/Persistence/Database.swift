@@ -49,6 +49,21 @@ final class Database: @unchecked Sendable {
             )
             """,
             "CREATE INDEX IF NOT EXISTS idx_daily_io_date ON daily_io_stats(date)",
+            """
+            CREATE TABLE IF NOT EXISTS ai_inventory (
+                tool_id TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                category TEXT NOT NULL,
+                first_seen TEXT NOT NULL,
+                last_seen TEXT NOT NULL,
+                observation_count INTEGER NOT NULL DEFAULT 1,
+                highest_confidence INTEGER NOT NULL DEFAULT 0,
+                best_basis TEXT NOT NULL DEFAULT 'inferred',
+                last_reason TEXT NOT NULL DEFAULT '',
+                process_names TEXT NOT NULL DEFAULT ''
+            )
+            """,
             "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)",
             "INSERT OR IGNORE INTO schema_version (version) VALUES (1)",
         ]
@@ -57,6 +72,44 @@ final class Database: @unchecked Sendable {
                 throw DatabaseError.schemaFailed
             }
         }
+        try migrateSchema()
+    }
+
+    private func migrateSchema() throws {
+        let version = currentSchemaVersion()
+
+        if version < 2 {
+            let statements = [
+                """
+                CREATE TABLE IF NOT EXISTS ai_security_findings (
+                    id TEXT PRIMARY KEY,
+                    category TEXT NOT NULL,
+                    severity INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    detail TEXT NOT NULL,
+                    evidence TEXT NOT NULL DEFAULT '',
+                    session_id TEXT,
+                    project_path TEXT,
+                    detected_at TEXT NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_security_severity ON ai_security_findings(severity)",
+                "CREATE INDEX IF NOT EXISTS idx_security_detected ON ai_security_findings(detected_at)",
+                "UPDATE schema_version SET version = 2",
+            ]
+            for sql in statements {
+                guard execute(sql) else { throw DatabaseError.schemaFailed }
+            }
+        }
+    }
+
+    private func currentSchemaVersion() -> Int {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = "SELECT version FROM schema_version LIMIT 1"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK,
+              sqlite3_step(stmt) == SQLITE_ROW else { return 0 }
+        return Int(sqlite3_column_int(stmt, 0))
     }
 
     // MARK: - Write
@@ -171,6 +224,125 @@ final class Database: @unchecked Sendable {
         }
     }
 
+    // MARK: - AI Inventory
+
+    func upsertAIInventory(_ entry: AIInventoryEntry) {
+        let firstSeen = Self.dateFormatter.string(from: entry.firstSeen)
+        let lastSeen = Self.dateFormatter.string(from: entry.lastSeen)
+        let names = entry.processNames.sorted().joined(separator: ",")
+
+        if loadAIInventoryEntry(toolID: entry.toolID) != nil {
+            let sql = """
+            UPDATE ai_inventory
+            SET last_seen = ?, observation_count = ?, highest_confidence = ?,
+                best_basis = ?, last_reason = ?, process_names = ?
+            WHERE tool_id = ?
+            """
+            executeUpdate(sql, bindings: [
+                .text(lastSeen), .int(entry.observationCount),
+                .int(entry.highestConfidence.rawValue), .text(entry.bestBasis.rawValue),
+                .text(entry.lastReason), .text(names), .text(entry.toolID)
+            ])
+        } else {
+            let sql = """
+            INSERT INTO ai_inventory
+                (tool_id, display_name, provider, category, first_seen, last_seen,
+                 observation_count, highest_confidence, best_basis, last_reason, process_names)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            executeUpdate(sql, bindings: [
+                .text(entry.toolID), .text(entry.displayName), .text(entry.provider),
+                .text(entry.category), .text(firstSeen), .text(lastSeen),
+                .int(entry.observationCount), .int(entry.highestConfidence.rawValue),
+                .text(entry.bestBasis.rawValue), .text(entry.lastReason), .text(names)
+            ])
+        }
+    }
+
+    private func loadAIInventoryEntry(toolID: String) -> AIInventoryEntry? {
+        let results = loadAIInventory(where: "tool_id = ?", bindings: [.text(toolID)])
+        return results.first
+    }
+
+    func loadAllAIInventory() -> [AIInventoryEntry] {
+        loadAIInventory(where: "1=1", bindings: [])
+    }
+
+    private func loadAIInventory(where clause: String, bindings: [Binding]) -> [AIInventoryEntry] {
+        let sql = """
+        SELECT tool_id, display_name, provider, category, first_seen, last_seen,
+               observation_count, highest_confidence, best_basis, last_reason, process_names
+        FROM ai_inventory WHERE \(clause)
+        ORDER BY last_seen DESC
+        """
+        return executeQuery(sql, bindings: bindings) { stmt in
+            let firstStr = String(cString: sqlite3_column_text(stmt, 4))
+            let lastStr = String(cString: sqlite3_column_text(stmt, 5))
+            let namesStr = String(cString: sqlite3_column_text(stmt, 10))
+            let names = namesStr.isEmpty ? Set<String>() : Set(namesStr.split(separator: ",").map(String.init))
+
+            return AIInventoryEntry(
+                toolID: String(cString: sqlite3_column_text(stmt, 0)),
+                displayName: String(cString: sqlite3_column_text(stmt, 1)),
+                provider: String(cString: sqlite3_column_text(stmt, 2)),
+                category: String(cString: sqlite3_column_text(stmt, 3)),
+                firstSeen: Self.dateFormatter.date(from: firstStr) ?? .now,
+                lastSeen: Self.dateFormatter.date(from: lastStr) ?? .now,
+                observationCount: Int(sqlite3_column_int(stmt, 6)),
+                highestConfidence: ConfidenceLevel(rawValue: Int(sqlite3_column_int(stmt, 7))) ?? .low,
+                bestBasis: EvidenceBasis(rawValue: String(cString: sqlite3_column_text(stmt, 8))) ?? .inferred,
+                lastReason: String(cString: sqlite3_column_text(stmt, 9)),
+                processNames: names
+            )
+        }
+    }
+
+    // MARK: - AI Security Findings
+
+    func saveSecurityFindings(_ signals: [AISecuritySignal]) {
+        execute("DELETE FROM ai_security_findings")
+        for signal in signals {
+            let sql = """
+            INSERT INTO ai_security_findings
+                (id, category, severity, title, detail, evidence, session_id, project_path, detected_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            executeUpdate(sql, bindings: [
+                .text(signal.id.uuidString),
+                .text(signal.category.rawValue),
+                .int(signal.severity.rawValue),
+                .text(signal.title),
+                .text(signal.detail),
+                .text(signal.evidence),
+                .text(signal.sessionID ?? ""),
+                .text(signal.projectPath ?? ""),
+                .text(Self.iso8601Formatter.string(from: signal.detectedAt))
+            ])
+        }
+    }
+
+    func loadSecurityFindings() -> [AISecuritySignal] {
+        let sql = """
+        SELECT id, category, severity, title, detail, evidence, session_id, project_path, detected_at
+        FROM ai_security_findings ORDER BY severity DESC, detected_at DESC
+        """
+        return executeQuery(sql, bindings: []) { stmt in
+            let sessionID = String(cString: sqlite3_column_text(stmt, 6))
+            let projectPath = String(cString: sqlite3_column_text(stmt, 7))
+            let dateStr = String(cString: sqlite3_column_text(stmt, 8))
+
+            return AISecuritySignal(
+                category: SignalCategory(rawValue: String(cString: sqlite3_column_text(stmt, 1))) ?? .suspiciousBash,
+                severity: SignalSeverity(rawValue: Int(sqlite3_column_int(stmt, 2))) ?? .info,
+                title: String(cString: sqlite3_column_text(stmt, 3)),
+                detail: String(cString: sqlite3_column_text(stmt, 4)),
+                evidence: String(cString: sqlite3_column_text(stmt, 5)),
+                sessionID: sessionID.isEmpty ? nil : sessionID,
+                projectPath: projectPath.isEmpty ? nil : projectPath
+            )
+        }
+    }
+
     // MARK: - Helpers
 
     private static func appSupportDirectory() throws -> URL {
@@ -261,4 +433,10 @@ extension Database {
         let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: .now)!
         return dateFormatter.string(from: date)
     }
+
+    static let iso8601Formatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
 }

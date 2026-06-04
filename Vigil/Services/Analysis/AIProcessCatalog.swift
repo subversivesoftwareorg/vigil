@@ -71,10 +71,6 @@ enum AIProcessCatalog {
         AIPathPattern(pattern: "/.cache/huggingface/", category: .modelStorage, tool: "Hugging Face"),
         AIPathPattern(pattern: "/mlx-models/", category: .modelStorage, tool: "MLX"),
 
-        // Browser-based AI / model downloads
-        AIPathPattern(pattern: "/Google/Chrome/", category: .browserAI, tool: "Chrome"),
-        AIPathPattern(pattern: "/Chromium/", category: .browserAI, tool: "Chromium"),
-        AIPathPattern(pattern: "/Microsoft Edge/", category: .browserAI, tool: "Edge"),
     ]
 
     /// File extensions that are commonly model files.
@@ -84,19 +80,65 @@ enum AIProcessCatalog {
     ]
 
     /// Check if a process name matches any known AI process.
-    static func match(_ processName: String) -> AIProcessEntry? {
-        let lower = processName.lowercased()
-        return knownProcesses.first { entry in
-            entry.patterns.contains { pattern in
-                lower.contains(pattern.lowercased())
+    /// Two-pass matching: exact name match (high confidence) then substring (medium confidence).
+    /// Case-sensitive to distinguish e.g. "claude" (CLI) from "Claude" (Desktop app).
+    static func match(_ processName: String) -> ProcessMatch? {
+        // Pass 1: exact match → observed, high confidence
+        for entry in knownProcesses {
+            for pattern in entry.patterns {
+                if processName == pattern {
+                    return ProcessMatch(
+                        entry: entry,
+                        evidence: AIEvidence(
+                            basis: .observed,
+                            confidence: .high,
+                            reason: "Process name exactly matches known pattern \"\(pattern)\""
+                        )
+                    )
+                }
             }
         }
+
+        // Pass 2: substring match → inferred, medium confidence
+        for entry in knownProcesses {
+            for pattern in entry.patterns {
+                if processName.contains(pattern) {
+                    return ProcessMatch(
+                        entry: entry,
+                        evidence: AIEvidence(
+                            basis: .inferred,
+                            confidence: .medium,
+                            reason: "Process name contains \"\(pattern)\" — may be \(entry.displayName) or a related process"
+                        )
+                    )
+                }
+            }
+        }
+
+        return nil
     }
 
     /// Check if a file path matches any known AI path pattern.
-    static func matchPath(_ path: String) -> AIPathPattern? {
+    /// All path matches are inferred — we see a file change in an AI-related directory
+    /// but cannot prove which process caused it.
+    static func matchPath(_ path: String) -> PathMatch? {
         let lower = path.lowercased()
-        return pathPatterns.first { lower.contains($0.pattern.lowercased()) }
+        guard let pattern = pathPatterns.first(where: { lower.contains($0.pattern.lowercased()) }) else {
+            return nil
+        }
+
+        let confidence: ConfidenceLevel =
+            pattern.pattern.hasPrefix("/.") || pattern.pattern.contains("Application Support")
+            ? .high : .medium
+
+        return PathMatch(
+            pattern: pattern,
+            evidence: AIEvidence(
+                basis: .inferred,
+                confidence: confidence,
+                reason: "File path contains \"\(pattern.pattern)\" — likely \(pattern.tool) activity"
+            )
+        )
     }
 
     /// Check if a file path looks like a model file.
@@ -104,6 +146,48 @@ enum AIProcessCatalog {
         let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
         return modelFileExtensions.contains(ext)
     }
+}
+
+// MARK: - Evidence Model
+
+struct AIEvidence {
+    let basis: EvidenceBasis
+    let confidence: ConfidenceLevel
+    let reason: String
+}
+
+enum EvidenceBasis: String {
+    case observed
+    case inferred
+    case configured
+
+    var rank: Int {
+        switch self {
+        case .observed: 2
+        case .configured: 1
+        case .inferred: 0
+        }
+    }
+}
+
+enum ConfidenceLevel: Int, Comparable {
+    case low = 0
+    case medium = 1
+    case high = 2
+
+    static func < (lhs: ConfidenceLevel, rhs: ConfidenceLevel) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct ProcessMatch {
+    let entry: AIProcessEntry
+    let evidence: AIEvidence
+}
+
+struct PathMatch {
+    let pattern: AIPathPattern
+    let evidence: AIEvidence
 }
 
 // MARK: - Data Types
@@ -125,14 +209,12 @@ enum AICategory: String, CaseIterable {
     case codingAssistant = "Coding Assistant"
     case chatApp = "Chat / Desktop App"
     case localModel = "Local Model Runner"
-    case browserAI = "Browser AI"
 
     var systemImage: String {
         switch self {
         case .codingAssistant: "chevron.left.forwardslash.chevron.right"
         case .chatApp: "bubble.left.and.bubble.right"
         case .localModel: "cpu"
-        case .browserAI: "globe"
         }
     }
 }
@@ -140,5 +222,4 @@ enum AICategory: String, CaseIterable {
 enum AIPathCategory: String {
     case workspaceData = "Workspace Data"
     case modelStorage = "Model Storage"
-    case browserAI = "Browser AI Data"
 }

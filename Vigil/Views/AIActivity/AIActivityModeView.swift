@@ -30,20 +30,20 @@ struct AIActivityModeView: View {
 
     // MARK: - Active AI Processes
 
-    private var activeAIProcesses: [(process: ProcessSnapshot, entry: AIProcessEntry, rate: ProcessIORate?)] {
+    private var activeAIProcesses: [(process: ProcessSnapshot, match: ProcessMatch, rate: ProcessIORate?)] {
         store.processes.compactMap { process in
-            guard let entry = AIProcessCatalog.match(process.displayName) else { return nil }
+            guard let match = AIProcessCatalog.match(process.displayName) else { return nil }
             let rate = store.ioRates[process.pid]
-            return (process, entry, rate)
+            return (process, match, rate)
         }
     }
 
     // MARK: - AI-Related File Events
 
-    private var aiFileEvents: [(event: FileEvent, pattern: AIPathPattern)] {
+    private var aiFileEvents: [(event: FileEvent, match: PathMatch)] {
         store.fileEvents.compactMap { event in
-            guard let pattern = AIProcessCatalog.matchPath(event.path) else { return nil }
-            return (event, pattern)
+            guard let match = AIProcessCatalog.matchPath(event.path) else { return nil }
+            return (event, match)
         }
     }
 
@@ -74,7 +74,7 @@ struct AIActivityModeView: View {
                     Text("No AI Activity Detected")
                         .font(.title2)
                         .fontWeight(.bold)
-                    Text("Vigil is watching for AI-related processes and file changes. Activity from tools like Claude Code, Copilot, Ollama, and others will appear here.")
+                    Text("Vigil watches for processes and file changes that may indicate AI tool activity. Detections from tools like Claude Code, Copilot, Ollama, and others will appear here with confidence levels.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                 } else {
@@ -96,10 +96,10 @@ struct AIActivityModeView: View {
     private func summaryText(processes: Int, files: Int, models: Int, io: Double) -> String {
         var parts: [String] = []
         if processes > 0 {
-            parts.append("\(processes) AI process\(processes == 1 ? "" : "es") running")
+            parts.append("\(processes) detected AI process\(processes == 1 ? "" : "es")")
         }
         if files > 0 {
-            parts.append("\(files) AI-related file event\(files == 1 ? "" : "s")")
+            parts.append("\(files) possible AI file event\(files == 1 ? "" : "s")")
         }
         if models > 0 {
             parts.append("\(models) model file\(models == 1 ? "" : "s") detected")
@@ -137,12 +137,12 @@ struct AIActivityModeView: View {
             HStack {
                 Image(systemName: "cpu")
                     .foregroundStyle(.cyan)
-                Text("Running AI Processes")
+                Text("Detected AI Processes")
                     .font(.headline)
             }
 
             ForEach(activeAIProcesses, id: \.process.pid) { item in
-                AIProcessCard(process: item.process, entry: item.entry,
+                AIProcessCard(process: item.process, match: item.match,
                               rate: item.rate, baseline: store.ioBaseline)
             }
         }
@@ -156,7 +156,7 @@ struct AIActivityModeView: View {
             HStack {
                 Image(systemName: "doc.text.magnifyingglass")
                     .foregroundStyle(.cyan)
-                Text("AI File Activity")
+                Text("Possible AI File Activity")
                     .font(.headline)
                 if !aiFileEvents.isEmpty {
                     Text("(\(aiFileEvents.count) events)")
@@ -175,11 +175,12 @@ struct AIActivityModeView: View {
                     .shadow(color: .black.opacity(0.03), radius: 2, y: 1)
             } else {
                 // Group by tool
-                let grouped = Dictionary(grouping: aiFileEvents, by: { $0.pattern.tool })
+                let grouped = Dictionary(grouping: aiFileEvents, by: { $0.match.pattern.tool })
                 let sortedTools = grouped.sorted { $0.value.count > $1.value.count }
 
                 ForEach(sortedTools, id: \.key) { tool, events in
-                    AIToolFileCard(tool: tool, category: events.first?.pattern.category ?? .workspaceData,
+                    AIToolFileCard(tool: tool, category: events.first?.match.pattern.category ?? .workspaceData,
+                                   evidence: events.first?.match.evidence,
                                    events: events.map(\.event))
                 }
             }
@@ -227,8 +228,8 @@ struct AIActivityModeView: View {
                                 .lineLimit(1)
                         }
                         Spacer()
-                        if let tool = AIProcessCatalog.matchPath(event.path) {
-                            Text(tool.tool)
+                        if let match = AIProcessCatalog.matchPath(event.path) {
+                            Text(match.pattern.tool)
                                 .font(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -417,9 +418,11 @@ private struct AIPermissionsCard: View {
 
 private struct AIProcessCard: View {
     let process: ProcessSnapshot
-    let entry: AIProcessEntry
+    let match: ProcessMatch
     let rate: ProcessIORate?
     let baseline: IOBaseline
+
+    private var entry: AIProcessEntry { match.entry }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -437,6 +440,7 @@ private struct AIProcessCard: View {
                         Text("· PID \(process.pid)")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
+                        EvidenceBadge(evidence: match.evidence)
                     }
                     Text(entry.category.rawValue)
                         .font(.caption)
@@ -504,6 +508,7 @@ private struct IOIndicator: View {
 private struct AIToolFileCard: View {
     let tool: String
     let category: AIPathCategory
+    let evidence: AIEvidence?
     let events: [FileEvent]
 
     var body: some View {
@@ -514,6 +519,9 @@ private struct AIToolFileCard: View {
                 Text("· \(category.rawValue)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let evidence {
+                    EvidenceBadge(evidence: evidence)
+                }
                 Spacer()
                 Text("\(events.count) event\(events.count == 1 ? "" : "s")")
                     .font(.caption)
@@ -561,5 +569,49 @@ private struct AIToolFileCard: View {
         }
         .font(.caption)
         .foregroundStyle(color)
+    }
+}
+
+// MARK: - Evidence Badge
+
+private struct EvidenceBadge: View {
+    let evidence: AIEvidence
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.caption2)
+            Text(label)
+                .font(.caption2)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(color.opacity(0.15), in: .capsule)
+        .foregroundStyle(color)
+        .help(evidence.reason)
+    }
+
+    private var icon: String {
+        switch evidence.basis {
+        case .observed: "eye.fill"
+        case .inferred: "questionmark.diamond"
+        case .configured: "gearshape.fill"
+        }
+    }
+
+    private var label: String {
+        switch evidence.confidence {
+        case .high: evidence.basis == .observed ? "Observed" : "Likely"
+        case .medium: "Possible"
+        case .low: "Uncertain"
+        }
+    }
+
+    private var color: Color {
+        switch evidence.confidence {
+        case .high: .green
+        case .medium: .yellow
+        case .low: .orange
+        }
     }
 }

@@ -25,6 +25,12 @@ struct MainWindowView: View {
                 HistoryModeView()
             case .aiActivity:
                 AIActivityModeView()
+            case .aiInventory:
+                AIInventoryModeView()
+            case .aiSecurity:
+                AISecurityModeView()
+            case .aiLogs:
+                AILogsModeView()
             case .fileSharing:
                 FileSharingModeView()
             }
@@ -48,6 +54,9 @@ enum ViewMode: String, CaseIterable, Identifiable {
     case processes
     case fileActivity
     case aiActivity
+    case aiInventory
+    case aiSecurity
+    case aiLogs
     case fileSharing
     case history
 
@@ -59,6 +68,9 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .processes: "Processes"
         case .fileActivity: "File Activity"
         case .aiActivity: "AI Activity"
+        case .aiInventory: "AI Inventory"
+        case .aiSecurity: "AI Security"
+        case .aiLogs: "AI Logs"
         case .fileSharing: "File Sharing"
         case .history: "History"
         }
@@ -70,6 +82,9 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .processes: "cpu"
         case .fileActivity: "doc.text.magnifyingglass"
         case .aiActivity: "brain"
+        case .aiInventory: "list.bullet.clipboard"
+        case .aiSecurity: "shield.lefthalf.filled.badge.checkmark"
+        case .aiLogs: "doc.text.magnifyingglass"
         case .fileSharing: "icloud.and.arrow.up.and.arrow.down"
         case .history: "clock.arrow.circlepath"
         }
