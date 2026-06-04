@@ -68,6 +68,12 @@ final class ProcessMonitor: ProcessDataSource, @unchecked Sendable {
                 Int32(MemoryLayout<proc_bsdinfo>.size)
             )
 
+            // Executable path — resolve early so it can serve as a name fallback
+            // PROC_PIDPATHINFO_MAXSIZE = 4 * MAXPATHLEN (macro not importable to Swift)
+            var pathBuffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+            let pathLen = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count))
+            let path = pathLen > 0 ? String(cString: pathBuffer) : nil
+
             let name: String
             let parentPid: Int32
 
@@ -79,20 +85,21 @@ final class ProcessMonitor: ProcessDataSource, @unchecked Sendable {
                 }
                 parentPid = Int32(info.pbi_ppid)
             } else {
-                // Fallback for privileged processes: proc_name works where proc_pidinfo fails
+                // Fallback chain for privileged processes:
+                // 1. proc_name — works for some daemons where proc_pidinfo fails
+                // 2. proc_pidpath — last resort; derive name from executable path
                 var nameBuffer = [CChar](repeating: 0, count: Int(MAXCOMLEN) + 1)
                 proc_name(pid, &nameBuffer, UInt32(nameBuffer.count))
                 let fallbackName = String(cString: nameBuffer)
-                guard !fallbackName.isEmpty else { return nil }
-                name = fallbackName
+                if !fallbackName.isEmpty {
+                    name = fallbackName
+                } else if let path {
+                    name = URL(fileURLWithPath: path).lastPathComponent
+                } else {
+                    return nil
+                }
                 parentPid = 0
             }
-
-            // Executable path
-            // PROC_PIDPATHINFO_MAXSIZE = 4 * MAXPATHLEN (macro not importable to Swift)
-            var pathBuffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
-            let pathLen = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count))
-            let path = pathLen > 0 ? String(cString: pathBuffer) : nil
 
             // Task info (memory, CPU time)
             var taskInfo = proc_taskinfo()

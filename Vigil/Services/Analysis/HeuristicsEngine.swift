@@ -68,12 +68,10 @@ struct HeuristicsEngine {
     // MARK: - Check: Missing Essential Processes
 
     private func checkMissingEssentials() -> [Finding] {
-        // Only check for processes that are reliably visible from user space.
-        // kernel_task (PID 0) is not enumerable via proc_listallpids, and some
-        // privileged daemons (securityd, trustd, logd) may fail both proc_pidinfo
-        // and proc_name, making them invisible to user-space monitoring.
-        // We check process names AND raw names since displayName uses the path's
-        // last component when available.
+        // kernel_task (PID 0) is not enumerable via proc_listallpids.
+        // Privileged daemons may fail proc_pidinfo and proc_name, but
+        // ProcessMonitor falls back to proc_pidpath for the name.
+        // We check both displayName and raw name for matching.
         let essentials = [
             "launchd", "WindowServer", "Dock", "Finder",
             "mDNSResponder", "configd"
