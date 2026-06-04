@@ -1,16 +1,40 @@
 import SwiftUI
 
+extension Notification.Name {
+    static let showWalkthrough = Notification.Name("showWalkthrough")
+}
+
 /// The root view for the Vigil window.
-/// Provides mode switching between the four visualization modes.
+/// Provides mode switching between the visualization modes, grouped by category.
 struct MainWindowView: View {
     @Environment(MonitoringStore.self) private var store
     @State private var selectedMode: ViewMode = .overview
+    @AppStorage("hasSeenWalkthrough") private var hasSeenWalkthrough = false
+    @State private var showingWalkthrough = false
 
     var body: some View {
         NavigationSplitView {
-            List(ViewMode.allCases, selection: $selectedMode) { mode in
-                Label(mode.displayName, systemImage: mode.systemImage)
-                    .tag(mode)
+            List(selection: $selectedMode) {
+                Section {
+                    sidebarItem(.overview)
+                }
+
+                Section("System") {
+                    sidebarItem(.processes)
+                    sidebarItem(.fileActivity)
+                    sidebarItem(.fileSharing)
+                }
+
+                Section("AI") {
+                    sidebarItem(.aiActivity)
+                    sidebarItem(.aiInventory)
+                    sidebarItem(.aiSecurity)
+                    sidebarItem(.aiLogs)
+                }
+
+                Section {
+                    sidebarItem(.history)
+                }
             }
             .navigationSplitViewColumnWidth(min: 160, ideal: 180)
         } detail: {
@@ -36,6 +60,9 @@ struct MainWindowView: View {
             }
         }
         .navigationTitle("Vigil")
+        .sheet(isPresented: $showingWalkthrough) {
+            WalkthroughView()
+        }
         .task {
             let processMonitor = ProcessMonitor()
             let fileMonitor = FileMonitor()
@@ -44,6 +71,24 @@ struct MainWindowView: View {
                             database: database)
             await store.startMonitoring()
         }
+        .onAppear {
+            if !hasSeenWalkthrough {
+                showingWalkthrough = true
+                hasSeenWalkthrough = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showWalkthrough)) { _ in
+            showingWalkthrough = true
+        }
+    }
+
+    private func sidebarItem(_ mode: ViewMode) -> some View {
+        Label(mode.displayName, systemImage: mode.systemImage)
+            .tag(mode)
+    }
+
+    func showWalkthrough() {
+        showingWalkthrough = true
     }
 }
 
@@ -84,7 +129,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .aiActivity: "brain"
         case .aiInventory: "list.bullet.clipboard"
         case .aiSecurity: "shield.lefthalf.filled.badge.checkmark"
-        case .aiLogs: "doc.text.magnifyingglass"
+        case .aiLogs: "note.text"
         case .fileSharing: "icloud.and.arrow.up.and.arrow.down"
         case .history: "clock.arrow.circlepath"
         }

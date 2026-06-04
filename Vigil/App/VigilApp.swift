@@ -21,6 +21,12 @@ struct VigilApp: App {
                     openWindow(id: "help")
                 }
                 .keyboardShortcut("?", modifiers: .command)
+
+                Divider()
+
+                Button("Welcome Walkthrough") {
+                    NotificationCenter.default.post(name: .showWalkthrough, object: nil)
+                }
             }
         }
 

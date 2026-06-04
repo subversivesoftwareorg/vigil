@@ -25,9 +25,9 @@ struct HelpView: View {
 
                 Divider()
 
-                // Modes
+                // System
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("The Four Modes")
+                    Text("System")
                         .font(.title2)
                         .fontWeight(.bold)
 
@@ -53,6 +53,22 @@ struct HelpView: View {
                     )
 
                     HelpSection(
+                        icon: "icloud.and.arrow.up.and.arrow.down",
+                        color: .indigo,
+                        title: "File Sharing",
+                        description: "Track cloud sync and backup activity. See which tools are running (Dropbox, OneDrive, Google Drive, iCloud, Time Machine, and more), what files they're syncing, and how much data they're moving. Helps you understand what's being shared and backed up from your Mac."
+                    )
+                }
+
+                Divider()
+
+                // AI
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("AI")
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    HelpSection(
                         icon: "brain",
                         color: .cyan,
                         title: "AI Activity",
@@ -60,12 +76,31 @@ struct HelpView: View {
                     )
 
                     HelpSection(
-                        icon: "icloud.and.arrow.up.and.arrow.down",
-                        color: .indigo,
-                        title: "File Sharing",
-                        description: "Track cloud sync and backup activity. See which tools are running (Dropbox, OneDrive, Google Drive, iCloud, Time Machine, and more), what files they're syncing, and how much data they're moving. Helps you understand what's being shared and backed up from your Mac."
+                        icon: "list.bullet.clipboard",
+                        color: .cyan,
+                        title: "AI Inventory",
+                        description: "A catalog of AI tools and models discovered on your system. See what's installed, where it lives, and how it was detected — whether it's a running process, a model file on disk, or an app in your Applications folder."
                     )
 
+                    HelpSection(
+                        icon: "shield.lefthalf.filled.badge.checkmark",
+                        color: .cyan,
+                        title: "AI Security",
+                        description: "Security posture of your AI stack. Reviews your AI tools for potential concerns — unencrypted model storage, processes with unusual network or disk activity, and tools running without expected sandboxing."
+                    )
+
+                    HelpSection(
+                        icon: "note.text",
+                        color: .cyan,
+                        title: "AI Logs",
+                        description: "Detailed chronological log of AI-related events. See when AI processes start and stop, what files they access, and how their resource usage changes over time."
+                    )
+                }
+
+                Divider()
+
+                // History
+                VStack(alignment: .leading, spacing: 20) {
                     HelpSection(
                         icon: "clock.arrow.circlepath",
                         color: .orange,
