@@ -67,6 +67,12 @@ struct AIProcessCatalogTests {
         #expect(AIProcessCatalog.match("Finder") == nil)
     }
 
+    @Test("CursorUIViewService does not match Cursor IDE")
+    func cursorUIViewServiceNoMatch() {
+        let match = AIProcessCatalog.match("CursorUIViewService")
+        #expect(match == nil)
+    }
+
     // MARK: - Path Matching & Evidence
 
     @Test("Claude workspace path matches with inferred basis and high confidence")

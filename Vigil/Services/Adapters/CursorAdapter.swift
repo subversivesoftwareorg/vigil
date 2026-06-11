@@ -10,7 +10,7 @@ struct CursorAdapter: AIToolAdapter {
         [
             ProcessSignature(pattern: "Cursor", matchMode: .exact, displayName: displayName),
             ProcessSignature(pattern: "cursor", matchMode: .exact, displayName: displayName),
-            ProcessSignature(pattern: "Cursor", matchMode: .substring, displayName: displayName),
+            ProcessSignature(pattern: "Cursor Helper", matchMode: .prefix, displayName: displayName),
         ]
     }
 
