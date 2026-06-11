@@ -101,6 +101,122 @@ final class Database: @unchecked Sendable {
                 guard execute(sql) else { throw DatabaseError.schemaFailed }
             }
         }
+
+        if version < 3 {
+            let statements = [
+                """
+                CREATE TABLE IF NOT EXISTS ai_sessions (
+                    id TEXT PRIMARY KEY,
+                    tool_id TEXT NOT NULL,
+                    project_path TEXT NOT NULL,
+                    started_at TEXT,
+                    ended_at TEXT,
+                    duration_seconds REAL,
+                    human_turns INTEGER NOT NULL DEFAULT 0,
+                    assistant_turns INTEGER NOT NULL DEFAULT 0,
+                    input_tokens INTEGER NOT NULL DEFAULT 0,
+                    output_tokens INTEGER NOT NULL DEFAULT 0,
+                    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+                    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+                    models_used TEXT NOT NULL DEFAULT '',
+                    git_branch TEXT
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_sessions_tool ON ai_sessions(tool_id, started_at)",
+
+                """
+                CREATE TABLE IF NOT EXISTS ai_tool_uses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    count INTEGER NOT NULL DEFAULT 1,
+                    FOREIGN KEY (session_id) REFERENCES ai_sessions(id)
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_tool_uses_session ON ai_tool_uses(session_id)",
+
+                """
+                CREATE TABLE IF NOT EXISTS ai_file_accesses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    tool_id TEXT,
+                    timestamp TEXT,
+                    FOREIGN KEY (session_id) REFERENCES ai_sessions(id)
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_file_accesses_session ON ai_file_accesses(session_id)",
+                "CREATE INDEX IF NOT EXISTS idx_file_accesses_path ON ai_file_accesses(file_path)",
+
+                """
+                CREATE TABLE IF NOT EXISTS ai_commands (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    timestamp TEXT,
+                    FOREIGN KEY (session_id) REFERENCES ai_sessions(id)
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_commands_session ON ai_commands(session_id)",
+
+                """
+                CREATE TABLE IF NOT EXISTS ai_config_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tool_id TEXT NOT NULL,
+                    snapshot_date TEXT NOT NULL,
+                    config_json TEXT NOT NULL,
+                    layers_count INTEGER NOT NULL DEFAULT 0,
+                    permissions_hash TEXT
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_config_tool ON ai_config_snapshots(tool_id, snapshot_date)",
+
+                """
+                CREATE TABLE IF NOT EXISTS ai_mcp_servers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tool_id TEXT NOT NULL,
+                    server_name TEXT NOT NULL,
+                    command TEXT,
+                    env_vars TEXT,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_mcp_tool ON ai_mcp_servers(tool_id)",
+
+                """
+                CREATE TABLE IF NOT EXISTS ai_risk_signals (
+                    id TEXT PRIMARY KEY,
+                    category TEXT NOT NULL,
+                    severity INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    detail TEXT NOT NULL,
+                    evidence TEXT NOT NULL DEFAULT '',
+                    tool_id TEXT,
+                    session_id TEXT,
+                    project_path TEXT,
+                    detected_at TEXT NOT NULL,
+                    resolved_at TEXT
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_risk_severity ON ai_risk_signals(severity, detected_at)",
+                "CREATE INDEX IF NOT EXISTS idx_risk_tool ON ai_risk_signals(tool_id)",
+
+                // Migrate existing ai_security_findings into ai_risk_signals
+                """
+                INSERT OR IGNORE INTO ai_risk_signals
+                    (id, category, severity, title, detail, evidence, session_id, project_path, detected_at)
+                SELECT id, category, severity, title, detail, evidence, session_id, project_path, detected_at
+                FROM ai_security_findings
+                """,
+
+                "UPDATE schema_version SET version = 3",
+            ]
+            for sql in statements {
+                guard execute(sql) else { throw DatabaseError.schemaFailed }
+            }
+        }
     }
 
     private func currentSchemaVersion() -> Int {
@@ -329,7 +445,6 @@ final class Database: @unchecked Sendable {
         return executeQuery(sql, bindings: []) { stmt in
             let sessionID = String(cString: sqlite3_column_text(stmt, 6))
             let projectPath = String(cString: sqlite3_column_text(stmt, 7))
-            let dateStr = String(cString: sqlite3_column_text(stmt, 8))
 
             return AISecuritySignal(
                 category: SignalCategory(rawValue: String(cString: sqlite3_column_text(stmt, 1))) ?? .suspiciousBash,
@@ -340,6 +455,348 @@ final class Database: @unchecked Sendable {
                 sessionID: sessionID.isEmpty ? nil : sessionID,
                 projectPath: projectPath.isEmpty ? nil : projectPath
             )
+        }
+    }
+
+    // MARK: - AI Sessions
+
+    func upsertSession(_ session: AISessionLog, toolID: String) {
+        let startedAt = session.startedAt.map { Self.iso8601Formatter.string(from: $0) }
+        let endedAt = session.endedAt.map { Self.iso8601Formatter.string(from: $0) }
+        let duration = session.duration
+        let models = session.modelsUsed.sorted().joined(separator: ",")
+
+        if loadSession(id: session.id) != nil {
+            let sql = """
+            UPDATE ai_sessions
+            SET ended_at = ?, duration_seconds = ?,
+                human_turns = ?, assistant_turns = ?,
+                input_tokens = ?, output_tokens = ?,
+                cache_creation_tokens = ?, cache_read_tokens = ?,
+                models_used = ?, git_branch = ?
+            WHERE id = ?
+            """
+            executeUpdate(sql, bindings: [
+                .text(endedAt ?? ""), .double(duration ?? 0),
+                .int(session.humanTurns), .int(session.assistantTurns),
+                .int(session.tokens.input), .int(session.tokens.output),
+                .int(session.tokens.cacheCreation), .int(session.tokens.cacheRead),
+                .text(models), .text(session.gitBranch ?? ""),
+                .text(session.id)
+            ])
+        } else {
+            let sql = """
+            INSERT INTO ai_sessions
+                (id, tool_id, project_path, started_at, ended_at, duration_seconds,
+                 human_turns, assistant_turns, input_tokens, output_tokens,
+                 cache_creation_tokens, cache_read_tokens, models_used, git_branch)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            executeUpdate(sql, bindings: [
+                .text(session.id), .text(toolID), .text(session.projectPath),
+                .text(startedAt ?? ""), .text(endedAt ?? ""), .double(duration ?? 0),
+                .int(session.humanTurns), .int(session.assistantTurns),
+                .int(session.tokens.input), .int(session.tokens.output),
+                .int(session.tokens.cacheCreation), .int(session.tokens.cacheRead),
+                .text(models), .text(session.gitBranch ?? "")
+            ])
+        }
+    }
+
+    func loadSession(id: String) -> AISessionRecord? {
+        let sql = """
+        SELECT id, tool_id, project_path, started_at, ended_at, duration_seconds,
+               human_turns, assistant_turns, input_tokens, output_tokens,
+               cache_creation_tokens, cache_read_tokens, models_used, git_branch
+        FROM ai_sessions WHERE id = ?
+        """
+        let results = executeQuery(sql, bindings: [.text(id)]) { stmt in
+            Self.mapSessionRow(stmt)
+        }
+        return results.first
+    }
+
+    func loadSessions(toolID: String? = nil, limit: Int = 100) -> [AISessionRecord] {
+        let whereClause = toolID != nil ? "WHERE tool_id = ?" : ""
+        let bindings: [Binding] = toolID != nil ? [.text(toolID!)] : []
+        let sql = """
+        SELECT id, tool_id, project_path, started_at, ended_at, duration_seconds,
+               human_turns, assistant_turns, input_tokens, output_tokens,
+               cache_creation_tokens, cache_read_tokens, models_used, git_branch
+        FROM ai_sessions \(whereClause)
+        ORDER BY started_at DESC LIMIT ?
+        """
+        return executeQuery(sql, bindings: bindings + [.int(limit)]) { stmt in
+            Self.mapSessionRow(stmt)
+        }
+    }
+
+    private static func mapSessionRow(_ stmt: OpaquePointer) -> AISessionRecord {
+        let startedStr = String(cString: sqlite3_column_text(stmt, 3))
+        let endedStr = String(cString: sqlite3_column_text(stmt, 4))
+        let modelsStr = String(cString: sqlite3_column_text(stmt, 12))
+        let branchStr = String(cString: sqlite3_column_text(stmt, 13))
+
+        return AISessionRecord(
+            id: String(cString: sqlite3_column_text(stmt, 0)),
+            toolID: String(cString: sqlite3_column_text(stmt, 1)),
+            projectPath: String(cString: sqlite3_column_text(stmt, 2)),
+            startedAt: startedStr.isEmpty ? nil : iso8601Formatter.date(from: startedStr),
+            endedAt: endedStr.isEmpty ? nil : iso8601Formatter.date(from: endedStr),
+            durationSeconds: sqlite3_column_double(stmt, 5),
+            humanTurns: Int(sqlite3_column_int(stmt, 6)),
+            assistantTurns: Int(sqlite3_column_int(stmt, 7)),
+            inputTokens: Int(sqlite3_column_int(stmt, 8)),
+            outputTokens: Int(sqlite3_column_int(stmt, 9)),
+            cacheCreationTokens: Int(sqlite3_column_int(stmt, 10)),
+            cacheReadTokens: Int(sqlite3_column_int(stmt, 11)),
+            modelsUsed: modelsStr.isEmpty ? [] : Set(modelsStr.split(separator: ",").map(String.init)),
+            gitBranch: branchStr.isEmpty ? nil : branchStr
+        )
+    }
+
+    // MARK: - AI Tool Uses
+
+    func insertToolUses(sessionID: String, toolUses: [String: Int]) {
+        let sql = """
+        INSERT INTO ai_tool_uses (session_id, tool_name, count) VALUES (?, ?, ?)
+        """
+        for (name, count) in toolUses {
+            executeUpdate(sql, bindings: [.text(sessionID), .text(name), .int(count)])
+        }
+    }
+
+    func loadToolUses(sessionID: String) -> [String: Int] {
+        let sql = "SELECT tool_name, count FROM ai_tool_uses WHERE session_id = ?"
+        let rows = executeQuery(sql, bindings: [.text(sessionID)]) { stmt in
+            (String(cString: sqlite3_column_text(stmt, 0)), Int(sqlite3_column_int(stmt, 1)))
+        }
+        return Dictionary(uniqueKeysWithValues: rows)
+    }
+
+    // MARK: - AI File Accesses
+
+    func insertFileAccesses(sessionID: String, files: [AIFileTouched], toolID: String? = nil) {
+        let sql = """
+        INSERT INTO ai_file_accesses (session_id, file_path, action, tool_id) VALUES (?, ?, ?, ?)
+        """
+        for file in files {
+            executeUpdate(sql, bindings: [
+                .text(sessionID), .text(file.path),
+                .text(file.action.rawValue), .text(toolID ?? "")
+            ])
+        }
+    }
+
+    func loadFileAccesses(sessionID: String) -> [AIFileAccessRecord] {
+        let sql = """
+        SELECT file_path, action, tool_id FROM ai_file_accesses WHERE session_id = ?
+        """
+        return executeQuery(sql, bindings: [.text(sessionID)]) { stmt in
+            let toolStr = String(cString: sqlite3_column_text(stmt, 2))
+            return AIFileAccessRecord(
+                filePath: String(cString: sqlite3_column_text(stmt, 0)),
+                action: String(cString: sqlite3_column_text(stmt, 1)),
+                toolID: toolStr.isEmpty ? nil : toolStr
+            )
+        }
+    }
+
+    // MARK: - AI Commands
+
+    func insertCommands(sessionID: String, commands: [String]) {
+        let sql = "INSERT INTO ai_commands (session_id, command) VALUES (?, ?)"
+        for command in commands {
+            executeUpdate(sql, bindings: [.text(sessionID), .text(command)])
+        }
+    }
+
+    func loadCommands(sessionID: String) -> [String] {
+        let sql = "SELECT command FROM ai_commands WHERE session_id = ? ORDER BY id"
+        return executeQuery(sql, bindings: [.text(sessionID)]) { stmt in
+            String(cString: sqlite3_column_text(stmt, 0))
+        }
+    }
+
+    // MARK: - AI Config Snapshots
+
+    func insertConfigSnapshot(toolID: String, configJSON: String, layersCount: Int,
+                              permissionsHash: String? = nil) {
+        let sql = """
+        INSERT INTO ai_config_snapshots
+            (tool_id, snapshot_date, config_json, layers_count, permissions_hash)
+        VALUES (?, ?, ?, ?, ?)
+        """
+        executeUpdate(sql, bindings: [
+            .text(toolID), .text(Self.dateString()),
+            .text(configJSON), .int(layersCount),
+            .text(permissionsHash ?? "")
+        ])
+    }
+
+    func loadLatestConfigSnapshot(toolID: String) -> AIConfigSnapshotRecord? {
+        let sql = """
+        SELECT tool_id, snapshot_date, config_json, layers_count, permissions_hash
+        FROM ai_config_snapshots WHERE tool_id = ?
+        ORDER BY snapshot_date DESC LIMIT 1
+        """
+        return executeQuery(sql, bindings: [.text(toolID)]) { stmt in
+            let hashStr = String(cString: sqlite3_column_text(stmt, 4))
+            return AIConfigSnapshotRecord(
+                toolID: String(cString: sqlite3_column_text(stmt, 0)),
+                snapshotDate: String(cString: sqlite3_column_text(stmt, 1)),
+                configJSON: String(cString: sqlite3_column_text(stmt, 2)),
+                layersCount: Int(sqlite3_column_int(stmt, 3)),
+                permissionsHash: hashStr.isEmpty ? nil : hashStr
+            )
+        }.first
+    }
+
+    // MARK: - AI MCP Servers
+
+    func upsertMCPServer(toolID: String, serverName: String, command: String?,
+                         envVars: String? = nil) {
+        let now = Self.iso8601Formatter.string(from: .now)
+        if loadMCPServer(toolID: toolID, serverName: serverName) != nil {
+            let sql = """
+            UPDATE ai_mcp_servers SET last_seen = ?, command = ?, env_vars = ?
+            WHERE tool_id = ? AND server_name = ?
+            """
+            executeUpdate(sql, bindings: [
+                .text(now), .text(command ?? ""), .text(envVars ?? ""),
+                .text(toolID), .text(serverName)
+            ])
+        } else {
+            let sql = """
+            INSERT INTO ai_mcp_servers
+                (tool_id, server_name, command, env_vars, first_seen, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """
+            executeUpdate(sql, bindings: [
+                .text(toolID), .text(serverName),
+                .text(command ?? ""), .text(envVars ?? ""),
+                .text(now), .text(now)
+            ])
+        }
+    }
+
+    private func loadMCPServer(toolID: String, serverName: String) -> AIMCPServerRecord? {
+        let sql = """
+        SELECT tool_id, server_name, command, env_vars, first_seen, last_seen
+        FROM ai_mcp_servers WHERE tool_id = ? AND server_name = ?
+        """
+        return executeQuery(sql, bindings: [.text(toolID), .text(serverName)]) { stmt in
+            Self.mapMCPServerRow(stmt)
+        }.first
+    }
+
+    func loadMCPServers(toolID: String? = nil) -> [AIMCPServerRecord] {
+        let whereClause = toolID != nil ? "WHERE tool_id = ?" : ""
+        let bindings: [Binding] = toolID != nil ? [.text(toolID!)] : []
+        let sql = """
+        SELECT tool_id, server_name, command, env_vars, first_seen, last_seen
+        FROM ai_mcp_servers \(whereClause) ORDER BY last_seen DESC
+        """
+        return executeQuery(sql, bindings: bindings) { stmt in
+            Self.mapMCPServerRow(stmt)
+        }
+    }
+
+    private static func mapMCPServerRow(_ stmt: OpaquePointer) -> AIMCPServerRecord {
+        let cmdStr = String(cString: sqlite3_column_text(stmt, 2))
+        let envStr = String(cString: sqlite3_column_text(stmt, 3))
+        return AIMCPServerRecord(
+            toolID: String(cString: sqlite3_column_text(stmt, 0)),
+            serverName: String(cString: sqlite3_column_text(stmt, 1)),
+            command: cmdStr.isEmpty ? nil : cmdStr,
+            envVars: envStr.isEmpty ? nil : envStr,
+            firstSeen: String(cString: sqlite3_column_text(stmt, 4)),
+            lastSeen: String(cString: sqlite3_column_text(stmt, 5))
+        )
+    }
+
+    // MARK: - AI Risk Signals
+
+    func saveRiskSignals(_ signals: [AISecuritySignal], toolID: String? = nil) {
+        for signal in signals {
+            let sql = """
+            INSERT OR REPLACE INTO ai_risk_signals
+                (id, category, severity, title, detail, evidence, tool_id,
+                 session_id, project_path, detected_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            executeUpdate(sql, bindings: [
+                .text(signal.id.uuidString),
+                .text(signal.category.rawValue),
+                .int(signal.severity.rawValue),
+                .text(signal.title),
+                .text(signal.detail),
+                .text(signal.evidence),
+                .text(toolID ?? ""),
+                .text(signal.sessionID ?? ""),
+                .text(signal.projectPath ?? ""),
+                .text(Self.iso8601Formatter.string(from: signal.detectedAt))
+            ])
+        }
+    }
+
+    func loadRiskSignals(toolID: String? = nil, limit: Int = 200) -> [AIRiskSignalRecord] {
+        let whereClause = toolID != nil ? "WHERE tool_id = ?" : ""
+        let bindings: [Binding] = toolID != nil ? [.text(toolID!)] : []
+        let sql = """
+        SELECT id, category, severity, title, detail, evidence, tool_id,
+               session_id, project_path, detected_at, resolved_at
+        FROM ai_risk_signals \(whereClause)
+        ORDER BY severity DESC, detected_at DESC LIMIT ?
+        """
+        return executeQuery(sql, bindings: bindings + [.int(limit)]) { stmt in
+            let toolStr = String(cString: sqlite3_column_text(stmt, 6))
+            let sessionStr = String(cString: sqlite3_column_text(stmt, 7))
+            let projectStr = String(cString: sqlite3_column_text(stmt, 8))
+            let resolvedText = sqlite3_column_text(stmt, 10)
+            let resolvedStr = resolvedText != nil ? String(cString: resolvedText!) : nil
+
+            return AIRiskSignalRecord(
+                id: String(cString: sqlite3_column_text(stmt, 0)),
+                category: String(cString: sqlite3_column_text(stmt, 1)),
+                severity: Int(sqlite3_column_int(stmt, 2)),
+                title: String(cString: sqlite3_column_text(stmt, 3)),
+                detail: String(cString: sqlite3_column_text(stmt, 4)),
+                evidence: String(cString: sqlite3_column_text(stmt, 5)),
+                toolID: toolStr.isEmpty ? nil : toolStr,
+                sessionID: sessionStr.isEmpty ? nil : sessionStr,
+                projectPath: projectStr.isEmpty ? nil : projectStr,
+                detectedAt: String(cString: sqlite3_column_text(stmt, 9)),
+                resolvedAt: resolvedStr?.isEmpty == true ? nil : resolvedStr
+            )
+        }
+    }
+
+    func resolveRiskSignal(id: String) {
+        let sql = "UPDATE ai_risk_signals SET resolved_at = ? WHERE id = ?"
+        executeUpdate(sql, bindings: [
+            .text(Self.iso8601Formatter.string(from: .now)), .text(id)
+        ])
+    }
+
+    // MARK: - Full Session Persistence
+
+    func persistSession(_ session: AISessionLog, toolID: String) {
+        upsertSession(session, toolID: toolID)
+
+        let existingTools = loadToolUses(sessionID: session.id)
+        if existingTools.isEmpty && !session.toolsUsed.isEmpty {
+            insertToolUses(sessionID: session.id, toolUses: session.toolsUsed)
+        }
+
+        let existingFiles = loadFileAccesses(sessionID: session.id)
+        if existingFiles.isEmpty && !session.filesTouched.isEmpty {
+            insertFileAccesses(sessionID: session.id, files: session.filesTouched, toolID: toolID)
+        }
+
+        let existingCommands = loadCommands(sessionID: session.id)
+        if existingCommands.isEmpty && !session.bashCommands.isEmpty {
+            insertCommands(sessionID: session.id, commands: session.bashCommands)
         }
     }
 
@@ -407,6 +864,60 @@ struct DailyIORecord {
     let date: String
     let readStats: RunningStats
     let writeStats: RunningStats
+}
+
+struct AISessionRecord {
+    let id: String
+    let toolID: String
+    let projectPath: String
+    let startedAt: Date?
+    let endedAt: Date?
+    let durationSeconds: Double
+    let humanTurns: Int
+    let assistantTurns: Int
+    let inputTokens: Int
+    let outputTokens: Int
+    let cacheCreationTokens: Int
+    let cacheReadTokens: Int
+    let modelsUsed: Set<String>
+    let gitBranch: String?
+}
+
+struct AIFileAccessRecord {
+    let filePath: String
+    let action: String
+    let toolID: String?
+}
+
+struct AIConfigSnapshotRecord {
+    let toolID: String
+    let snapshotDate: String
+    let configJSON: String
+    let layersCount: Int
+    let permissionsHash: String?
+}
+
+struct AIMCPServerRecord {
+    let toolID: String
+    let serverName: String
+    let command: String?
+    let envVars: String?
+    let firstSeen: String
+    let lastSeen: String
+}
+
+struct AIRiskSignalRecord {
+    let id: String
+    let category: String
+    let severity: Int
+    let title: String
+    let detail: String
+    let evidence: String
+    let toolID: String?
+    let sessionID: String?
+    let projectPath: String?
+    let detectedAt: String
+    let resolvedAt: String?
 }
 
 enum DatabaseError: Error {

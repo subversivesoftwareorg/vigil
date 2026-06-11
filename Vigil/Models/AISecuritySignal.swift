@@ -34,6 +34,10 @@ enum SignalCategory: String, CaseIterable {
     case tokenmaxxing
     case longSession
     case agentAction
+    case exfiltration
+    case mcpRisk
+    case fileSharingExposure
+    case excessiveAgency
 
     var displayName: String {
         switch self {
@@ -42,6 +46,10 @@ enum SignalCategory: String, CaseIterable {
         case .tokenmaxxing: "Token Usage"
         case .longSession: "Long Session"
         case .agentAction: "Agent Action"
+        case .exfiltration: "Exfiltration Risk"
+        case .mcpRisk: "MCP Risk"
+        case .fileSharingExposure: "File Sharing Exposure"
+        case .excessiveAgency: "Excessive Agency"
         }
     }
 
@@ -52,6 +60,10 @@ enum SignalCategory: String, CaseIterable {
         case .tokenmaxxing: "chart.bar.xaxis.ascending"
         case .longSession: "clock.badge.exclamationmark"
         case .agentAction: "figure.walk.motion"
+        case .exfiltration: "arrow.up.doc"
+        case .mcpRisk: "server.rack"
+        case .fileSharingExposure: "icloud.and.arrow.up"
+        case .excessiveAgency: "exclamationmark.shield"
         }
     }
 }

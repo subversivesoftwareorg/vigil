@@ -419,6 +419,8 @@ private struct SessionCard: View {
         case .read: "eye"
         case .write: "square.and.pencil"
         case .edit: "pencil.line"
+        case .multiEdit: "pencil.and.list.clipboard"
+        case .search: "magnifyingglass"
         }
     }
 
@@ -427,6 +429,8 @@ private struct SessionCard: View {
         case .read: .blue
         case .write: .orange
         case .edit: .green
+        case .multiEdit: .green
+        case .search: .purple
         }
     }
 
@@ -435,6 +439,8 @@ private struct SessionCard: View {
         case .read: "Read"
         case .write: "Written"
         case .edit: "Edited"
+        case .multiEdit: "Multi-Edited"
+        case .search: "Searched"
         }
     }
 }

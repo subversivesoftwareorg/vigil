@@ -245,13 +245,32 @@ final class MonitoringStore {
 
     // MARK: - AI Security Scanning
 
-    /// Run a security scan on all Claude Code session logs.
+    /// Run a security scan on all AI session logs across all adapters.
+    /// Also persists parsed sessions to the database for the agent timeline.
     func runSecurityScan() {
         isScanningSecurity = true
-        let sessions = AISessionLogParser.parseAll()
+
+        // Parse sessions from all adapters
+        let sessions = AIAdapterRegistry.parseAllSessions()
+
+        // Persist parsed sessions to the timeline database
+        if let database {
+            for adapter in AIAdapterRegistry.adapters {
+                let adapterSessions = adapter.parseSessions(projectFilter: nil)
+                for session in adapterSessions {
+                    database.persistSession(session, toolID: adapter.toolID)
+                }
+            }
+        }
+
+        // Run risk detection (backward compat: uses Claude adapter for now)
         let result = AISecurityEngine.scan(sessions: sessions)
         securityScanResult = result
         database?.saveSecurityFindings(result.signals)
+
+        // Also persist to the new risk_signals table
+        database?.saveRiskSignals(result.signals)
+
         isScanningSecurity = false
     }
 

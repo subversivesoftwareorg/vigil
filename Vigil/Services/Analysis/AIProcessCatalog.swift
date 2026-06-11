@@ -80,71 +80,33 @@ enum AIProcessCatalog {
     ]
 
     /// Check if a process name matches any known AI process.
-    /// Two-pass matching: exact name match (high confidence) then substring (medium confidence).
-    /// Case-sensitive to distinguish e.g. "claude" (CLI) from "Claude" (Desktop app).
+    /// Delegates to AIAdapterRegistry for unified multi-tool matching.
     static func match(_ processName: String) -> ProcessMatch? {
-        // Pass 1: exact match → observed, high confidence
-        for entry in knownProcesses {
-            for pattern in entry.patterns {
-                if processName == pattern {
-                    return ProcessMatch(
-                        entry: entry,
-                        evidence: AIEvidence(
-                            basis: .observed,
-                            confidence: .high,
-                            reason: "Process name exactly matches known pattern \"\(pattern)\""
-                        )
-                    )
-                }
-            }
-        }
+        guard let result = AIAdapterRegistry.matchProcess(processName) else { return nil }
 
-        // Pass 2: substring match → inferred, medium confidence
-        for entry in knownProcesses {
-            for pattern in entry.patterns {
-                if processName.contains(pattern) {
-                    return ProcessMatch(
-                        entry: entry,
-                        evidence: AIEvidence(
-                            basis: .inferred,
-                            confidence: .medium,
-                            reason: "Process name contains \"\(pattern)\" — may be \(entry.displayName) or a related process"
-                        )
-                    )
-                }
-            }
-        }
+        let entry = knownProcesses.first { $0.displayName == result.adapter.displayName }
+            ?? AIProcessEntry(patterns: [], displayName: result.adapter.displayName,
+                              category: result.adapter.category, provider: result.adapter.provider)
 
-        return nil
+        return ProcessMatch(entry: entry, evidence: result.evidence)
     }
 
     /// Check if a file path matches any known AI path pattern.
-    /// All path matches are inferred — we see a file change in an AI-related directory
-    /// but cannot prove which process caused it.
+    /// Delegates to AIAdapterRegistry for unified multi-tool matching.
     static func matchPath(_ path: String) -> PathMatch? {
-        let lower = path.lowercased()
-        guard let pattern = pathPatterns.first(where: { lower.contains($0.pattern.lowercased()) }) else {
-            return nil
-        }
+        guard let result = AIAdapterRegistry.matchPath(path) else { return nil }
 
-        let confidence: ConfidenceLevel =
-            pattern.pattern.hasPrefix("/.") || pattern.pattern.contains("Application Support")
-            ? .high : .medium
+        let pattern = pathPatterns.first { $0.tool == result.adapter.displayName }
+            ?? AIPathPattern(pattern: result.signature.pattern,
+                             category: result.signature.pathCategory,
+                             tool: result.adapter.displayName)
 
-        return PathMatch(
-            pattern: pattern,
-            evidence: AIEvidence(
-                basis: .inferred,
-                confidence: confidence,
-                reason: "File path contains \"\(pattern.pattern)\" — likely \(pattern.tool) activity"
-            )
-        )
+        return PathMatch(pattern: pattern, evidence: result.evidence)
     }
 
     /// Check if a file path looks like a model file.
     static func isModelFile(_ path: String) -> Bool {
-        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
-        return modelFileExtensions.contains(ext)
+        AIAdapterRegistry.isModelFile(path)
     }
 }
 

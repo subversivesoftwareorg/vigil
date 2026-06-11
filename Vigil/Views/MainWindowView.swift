@@ -25,11 +25,17 @@ struct MainWindowView: View {
                     sidebarItem(.fileSharing)
                 }
 
-                Section("AI") {
-                    sidebarItem(.aiActivity)
-                    sidebarItem(.aiInventory)
-                    sidebarItem(.aiSecurity)
+                Section("AI Activity") {
+                    sidebarItem(.aiOverview)
+                    sidebarItem(.aiTimeline)
                     sidebarItem(.aiLogs)
+                }
+
+                Section("AI Security") {
+                    sidebarItem(.aiPermissions)
+                    sidebarItem(.aiSecurity)
+                    sidebarItem(.aiMCPSurface)
+                    sidebarItem(.aiInventory)
                 }
 
                 Section {
@@ -47,6 +53,14 @@ struct MainWindowView: View {
                 FileActivityModeView()
             case .history:
                 HistoryModeView()
+            case .aiOverview:
+                AIOverviewModeView()
+            case .aiTimeline:
+                AITimelineModeView()
+            case .aiPermissions:
+                AIPermissionsMatrixView()
+            case .aiMCPSurface:
+                AIMCPSurfaceModeView()
             case .aiActivity:
                 AIActivityModeView()
             case .aiInventory:
@@ -98,11 +112,15 @@ enum ViewMode: String, CaseIterable, Identifiable {
     case overview
     case processes
     case fileActivity
-    case aiActivity
-    case aiInventory
-    case aiSecurity
-    case aiLogs
     case fileSharing
+    case aiOverview
+    case aiTimeline
+    case aiLogs
+    case aiPermissions
+    case aiSecurity
+    case aiMCPSurface
+    case aiInventory
+    case aiActivity
     case history
 
     var id: String { rawValue }
@@ -112,11 +130,15 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .overview: "Overview"
         case .processes: "Processes"
         case .fileActivity: "File Activity"
-        case .aiActivity: "AI Activity"
-        case .aiInventory: "AI Inventory"
-        case .aiSecurity: "AI Security"
-        case .aiLogs: "AI Logs"
         case .fileSharing: "File Sharing"
+        case .aiOverview: "AI Overview"
+        case .aiTimeline: "Agent Timeline"
+        case .aiLogs: "AI Logs"
+        case .aiPermissions: "Permissions"
+        case .aiSecurity: "Risk Signals"
+        case .aiMCPSurface: "MCP & Rules"
+        case .aiInventory: "AI Inventory"
+        case .aiActivity: "AI Activity"
         case .history: "History"
         }
     }
@@ -126,11 +148,15 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .overview: "square.grid.2x2"
         case .processes: "cpu"
         case .fileActivity: "doc.text.magnifyingglass"
-        case .aiActivity: "brain"
-        case .aiInventory: "list.bullet.clipboard"
-        case .aiSecurity: "shield.lefthalf.filled.badge.checkmark"
-        case .aiLogs: "note.text"
         case .fileSharing: "icloud.and.arrow.up.and.arrow.down"
+        case .aiOverview: "brain"
+        case .aiTimeline: "clock.arrow.2.circlepath"
+        case .aiLogs: "note.text"
+        case .aiPermissions: "lock.shield"
+        case .aiSecurity: "shield.lefthalf.filled.badge.checkmark"
+        case .aiMCPSurface: "server.rack"
+        case .aiInventory: "list.bullet.clipboard"
+        case .aiActivity: "waveform.path.ecg"
         case .history: "clock.arrow.circlepath"
         }
     }
