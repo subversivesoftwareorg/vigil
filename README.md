@@ -41,10 +41,12 @@ Vigil uses a **protocol-based adapter architecture** where each AI tool encapsul
 |------|-----------|--------|----------|------------|
 | Claude Code | Process + path | Settings layers, managed policy, MCP, hooks, CLAUDE.md | Full JSONL parsing (12 tool types) | All detections |
 | Codex CLI | Process + path | TOML config, MCP, plugins, AGENTS.md | JSONL session parsing | Via shared engine |
+| Zed | Process + path | settings.json (AI model/provider, context servers, agent mode), external agents, extensions, threads DB | — | Via shared engine |
 | Cursor | Process + path | Settings, MCP, .cursorrules | — | Via shared engine |
+| GitHub Copilot | Process + path + extensions | Auth tokens, VS Code extension, global storage, gh CLI extension, JetBrains plugin | — | Via shared engine |
+| Gemini CLI | Process + path | ~/.gemini/ settings, sessions, .gemini/ project rules | — | Via shared engine |
 | Windsurf | Process + path | Settings, .windsurfrules | — | Via shared engine |
 | Cline / Roo | Process + path | VS Code settings, MCP, .clinerules | — | Via shared engine |
-| GitHub Copilot | Process + path | — | — | Via shared engine |
 | Aider | Process + path | YAML config | — | Via shared engine |
 | Ollama | Process + path | — | — | — |
 | LM Studio | Process + path | — | — | — |

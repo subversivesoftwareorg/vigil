@@ -18,6 +18,7 @@ enum AIAdapterRegistry {
         HuggingFaceAdapter(),
         ChatGPTAdapter(),
         GeminiAdapter(),
+        GeminiCLIAdapter(),
         ZedAdapter(),
         WhisperAdapter(),
         StableDiffusionAdapter(),

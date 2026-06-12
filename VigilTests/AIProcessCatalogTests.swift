@@ -102,12 +102,12 @@ struct AIProcessCatalogTests {
         #expect(match?.evidence.confidence == .high)
     }
 
-    @Test("Broader path pattern yields medium confidence")
-    func broaderPathPattern() {
-        let match = AIProcessCatalog.matchPath("/some/path/copilot/suggestions.json")
+    @Test("Copilot config path matches with high confidence")
+    func copilotConfigPath() {
+        let match = AIProcessCatalog.matchPath("/Users/dev/.config/github-copilot/hosts.json")
         #expect(match != nil)
         #expect(match?.pattern.tool == "GitHub Copilot")
-        #expect(match?.evidence.confidence == .medium)
+        #expect(match?.evidence.confidence == .high)
     }
 
     @Test("Chrome profile path no longer matches")

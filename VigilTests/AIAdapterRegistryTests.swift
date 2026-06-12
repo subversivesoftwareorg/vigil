@@ -9,7 +9,7 @@ struct AIAdapterRegistryTests {
 
     @Test("registry contains expected number of adapters")
     func adapterCount() {
-        #expect(AIAdapterRegistry.adapters.count >= 18)
+        #expect(AIAdapterRegistry.adapters.count >= 19)
     }
 
     @Test("all adapters have unique toolIDs")
