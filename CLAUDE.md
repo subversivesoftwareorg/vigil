@@ -8,7 +8,7 @@ Part of the Subversive Software family alongside [Elucidate](../survey) (Bluetoo
 
 ```
 Bundle ID:    com.subversivesoftware.vigil
-Platform:     macOS 15+
+Platform:     macOS 14+
 Swift:        6.x (language mode 5)
 Build:        swift build / swift run Vigil
 Test:         swift test
@@ -37,16 +37,34 @@ Vigil/
       MonitoringProtocols.swift # Core protocols (SystemMonitor, ProcessDataSource, FileEventSource)
       ProcessMonitor.swift      # libproc-based process monitoring
       FileMonitor.swift         # FSEvents-based file monitoring
-    Analysis/                   # Heuristics, scoring, pattern detection
+    Adapters/                   # AIToolAdapter protocol + per-tool adapters
+      AIToolAdapter.swift       # Protocol, ProcessSignature, PathSignature
+      AIAdapterRegistry.swift   # Unified registry for all AI tool adapters
+      ClaudeCodeAdapter.swift   # Claude Code: config, sessions, risk rules
+      CodexAdapter.swift        # Codex CLI: TOML config, session parsing
+      CursorAdapter.swift       # Cursor: settings, MCP, .cursorrules
+      # ... plus adapters for Windsurf, Copilot, Aider, Cline/Roo, Ollama, etc.
+    Analysis/                   # Heuristics, scoring, risk detection
+      AIRiskEngine.swift        # Cross-tool risk: file sharing, MCP, agency
+      MacOSPrivacyReader.swift  # TCC database + LaunchAgent scanning
   Store/                        # @Observable @MainActor state stores
     MonitoringStore.swift       # Central state for all monitoring data
-  Persistence/                  # SQLite layer
+  Persistence/                  # SQLite layer (schema v3)
   Views/
-    MainWindowView.swift        # Root view with mode switching
-    Simple/                     # Simple mode views
-    Expert/                     # Expert mode views
-    Heuristics/                 # Heuristics analysis views
-    Reporting/                  # Broad reporting views
+    MainWindowView.swift        # Root view with sidebar navigation
+    Overview/                   # System health dashboard
+    Processes/                  # Process list with inspector
+    FileActivity/               # Real-time file events
+    FileSharing/                # Cloud sync and transfer detection
+    AIOverview/                 # AI risk posture dashboard
+    AITimeline/                 # Chronological session browser
+    AIPermissions/              # Permissions matrix
+    AISecurity/                 # Risk signal dashboard
+    AIMCPSurface/               # MCP server + prompt surface inventory
+    AIInventory/                # AI tool catalog
+    AIActivity/                 # Real-time AI process/file activity
+    AILogs/                     # Raw session log viewer
+    History/                    # Long-term I/O trends
     Components/                 # Shared/reusable view components
   Extensions/                   # Swift extensions
   Resources/                    # Bundled data files
@@ -126,14 +144,24 @@ protocol FileEventSource: SystemMonitor {
 - Write batching to avoid overwhelming disk I/O
 - Schema migrations handled manually with a version table
 
-### View Modes (evolving)
+### AI Tool Adapter Architecture
 
-Four planned visualization modes, to be fleshed out incrementally:
+Each AI tool is represented by a struct conforming to `AIToolAdapter` (defined in `Vigil/Services/Adapters/AIToolAdapter.swift`). Adapters encapsulate:
+- **Process/path signatures** — how to detect the tool is running or has local data
+- **Config reading** — parsing tool-specific settings files (JSON, TOML, etc.)
+- **Session parsing** — reading structured session logs (JSONL)
+- **Risk detection** — tool-specific security rules
 
-1. **Simple** — clean, glanceable overview for non-technical users
-2. **Expert** — detailed process trees, file activity streams, raw data access
-3. **Heuristics** — pattern-based analysis highlighting anomalies and suspicious behavior
-4. **Reporting** — broad summary dashboards, trends over time, exportable reports
+`AIAdapterRegistry` holds all adapters and provides aggregate queries: `matchProcess()`, `matchPath()`, `discoverAllConfigs()`, `parseAllSessions()`, `detectAllRisks()`. To add a new AI tool, create one adapter file and add it to the registry.
+
+Cross-tool risk detections (file sharing exposure, MCP risk, excessive agency, macOS privacy posture) live in `AIRiskEngine`.
+
+### Sidebar Structure
+
+The sidebar is organized into three groups:
+- **System**: Overview, Processes, File Activity, File Sharing
+- **AI Activity**: AI Overview, Agent Timeline, AI Logs
+- **AI Security**: Permissions, Risk Signals, MCP & Rules, AI Inventory
 
 ### Entitlements & Privileges
 
