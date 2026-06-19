@@ -26,5 +26,9 @@
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>SUFeedURL</key>
+	<string>https://subversivesoftware.org/updates/vigil/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>o8LVWN856eET9FIPLD7qHGEDu6+7s9amIf+TH2pIEHs=</string>
 </dict>
 </plist>

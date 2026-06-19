@@ -1,9 +1,13 @@
 import SwiftUI
+import Sparkle
 
 @main
 struct VigilApp: App {
     @State private var monitoringStore = MonitoringStore()
     @Environment(\.openWindow) private var openWindow
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
+    )
 
     var body: some Scene {
         WindowGroup {
@@ -15,6 +19,9 @@ struct VigilApp: App {
                 Button("About Vigil") {
                     openWindow(id: "about")
                 }
+            }
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: updaterController.updater)
             }
             CommandGroup(replacing: .help) {
                 Button("Vigil Help") {

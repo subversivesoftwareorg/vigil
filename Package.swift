@@ -7,9 +7,13 @@ let package = Package(
     platforms: [
         .macOS(.v14)
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.0.0"),
+    ],
     targets: [
         .executableTarget(
             name: "Vigil",
+            dependencies: ["Sparkle"],
             path: "Vigil",
             swiftSettings: [
                 .swiftLanguageMode(.v5)
