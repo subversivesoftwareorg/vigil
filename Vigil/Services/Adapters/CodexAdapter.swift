@@ -159,6 +159,53 @@ struct CodexAdapter: AIToolAdapter {
         return sessions
     }
 
+    // MARK: - Risk Detection
+
+    func detectRisks(sessions: [AISessionLog], config: AIToolConfig?) -> [AISecuritySignal] {
+        var signals: [AISecuritySignal] = []
+
+        for session in sessions {
+            signals.append(contentsOf: ClaudeCodeAdapter.detectSensitiveFileAccess(session))
+            signals.append(contentsOf: ClaudeCodeAdapter.detectSuspiciousBash(session))
+            signals.append(contentsOf: ClaudeCodeAdapter.detectExfiltration(session))
+            signals.append(contentsOf: ClaudeCodeAdapter.detectLongSession(session))
+        }
+
+        // Config-based risks
+        if let config {
+            signals.append(contentsOf: AIRiskEngine.detectMCPRisks(configs: [config]))
+
+            // Desktop mode with ambient suggestions = elevated agency
+            for line in config.summary where line.contains("Desktop app configured") {
+                signals.append(AISecuritySignal(
+                    category: .excessiveAgency,
+                    severity: .info,
+                    title: "Codex desktop mode enabled",
+                    detail: "Codex is configured with desktop app mode, which can provide ambient code suggestions without explicit prompts.",
+                    evidence: "Source: ~/.codex/config.toml [desktop]"
+                ))
+            }
+
+            // Trusted projects = explicit trust grant
+            let trustedCount = config.summary.compactMap { line -> Int? in
+                guard line.contains("trusted project") else { return nil }
+                return Int(line.prefix(while: \.isNumber))
+            }.first ?? 0
+
+            if trustedCount > 5 {
+                signals.append(AISecuritySignal(
+                    category: .excessiveAgency,
+                    severity: .concern,
+                    title: "Many trusted projects in Codex",
+                    detail: "\(trustedCount) projects are marked as trusted. Each trusted project grants Codex full access without approval prompts.",
+                    evidence: "Source: ~/.codex/config.toml [projects]"
+                ))
+            }
+        }
+
+        return signals
+    }
+
     // MARK: - Internals
 
     private static let isoFormatter: ISO8601DateFormatter = {

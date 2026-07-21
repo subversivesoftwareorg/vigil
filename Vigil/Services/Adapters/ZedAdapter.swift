@@ -137,6 +137,47 @@ struct ZedAdapter: AIToolAdapter {
         return config
     }
 
+    // MARK: - Risk Detection
+
+    func detectRisks(sessions: [AISessionLog], config: AIToolConfig?) -> [AISecuritySignal] {
+        guard let config else { return [] }
+        var signals: [AISecuritySignal] = []
+
+        // External agents are third-party code running inside the editor
+        let externalAgentLines = config.summary.filter { $0.hasPrefix("External agents:") }
+        for line in externalAgentLines {
+            let agents = line.replacingOccurrences(of: "External agents: ", with: "")
+            signals.append(AISecuritySignal(
+                category: .excessiveAgency,
+                severity: .info,
+                title: "Zed has external agents installed",
+                detail: "External agents run third-party code within Zed's editor context: \(agents). These agents can access files and execute tools.",
+                evidence: "Path: ~/Library/Application Support/Zed/external_agents/"
+            ))
+        }
+
+        // MCP context servers
+        signals.append(contentsOf: AIRiskEngine.detectMCPRisks(configs: [config]))
+
+        // Many extensions = larger attack surface
+        let extensionCount = config.summary.compactMap { line -> Int? in
+            guard line.contains("extension") else { return nil }
+            return Int(line.prefix(while: \.isNumber))
+        }.first ?? 0
+
+        if extensionCount > 20 {
+            signals.append(AISecuritySignal(
+                category: .supplyChain,
+                severity: .info,
+                title: "Large number of Zed extensions",
+                detail: "\(extensionCount) extensions installed. Each extension can access editor state and potentially modify files.",
+                evidence: "Source: ~/Library/Application Support/Zed/extensions/index.json"
+            ))
+        }
+
+        return signals
+    }
+
     // MARK: - Helpers
 
     private static func readFile(_ path: String) -> String? {

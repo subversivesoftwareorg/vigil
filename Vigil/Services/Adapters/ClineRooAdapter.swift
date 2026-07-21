@@ -18,6 +18,39 @@ struct ClineRooAdapter: AIToolAdapter {
         [PathSignature(pattern: "/.continue/", pathCategory: .workspaceData, tool: displayName)]
     }
 
+    // MARK: - Risk Detection
+
+    func detectRisks(sessions: [AISessionLog], config: AIToolConfig?) -> [AISecuritySignal] {
+        guard let config else { return [] }
+        var signals = AIRiskEngine.detectMCPRisks(configs: [config])
+
+        // Auto-approve mode = no human oversight
+        for layer in config.layers where layer.label.contains("auto-approve") {
+            signals.append(AISecuritySignal(
+                category: .excessiveAgency,
+                severity: .warning,
+                title: "Roo Code auto-approve enabled",
+                detail: "roo-cline.autoApprove is enabled in VS Code settings. All tool calls execute without user confirmation.",
+                evidence: "Source: \(layer.path)"
+            ))
+        }
+
+        // Cline's alwaysAllow on MCP servers
+        for server in config.mcpServerDetails where !server.autoApprovedTools.isEmpty {
+            signals.append(AISecuritySignal(
+                category: .excessiveAgency,
+                severity: .concern,
+                title: "Cline MCP server has always-allowed tools",
+                detail: "Server \"\(server.name)\" has \(server.autoApprovedTools.count) tool(s) set to alwaysAllow: \(server.autoApprovedTools.prefix(5).joined(separator: ", ")).",
+                evidence: "Source: VS Code settings"
+            ))
+        }
+
+        return signals
+    }
+
+    // MARK: - Config Reading
+
     func readConfig() -> AIToolConfig? {
         let fm = FileManager.default
 

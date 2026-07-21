@@ -18,6 +18,15 @@ struct CursorAdapter: AIToolAdapter {
         [PathSignature(pattern: "/.cursor/", pathCategory: .workspaceData, tool: displayName)]
     }
 
+    // MARK: - Risk Detection
+
+    func detectRisks(sessions: [AISessionLog], config: AIToolConfig?) -> [AISecuritySignal] {
+        guard let config else { return [] }
+        return AIRiskEngine.detectMCPRisks(configs: [config])
+    }
+
+    // MARK: - Config Reading
+
     func readConfig() -> AIToolConfig? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let fm = FileManager.default

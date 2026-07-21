@@ -70,23 +70,24 @@ The MCP view now shows config and usage. Next step: detect the threats described
 Extend adapter depth beyond Claude Code so Vigil provides real visibility across all AI tools in use.
 
 ### Priority Adapters (Config + Session Parsing)
-- [ ] **Claude Desktop** — read `claude_desktop_config.json`, parse MCP servers, detect running Electron process
+- [x] **Claude Desktop** — reads session JSON files for MCP servers and tool schemas, config from `claude_desktop_config.json` (done in M2)
 - [ ] **Cursor** — parse session/workspace state for tool usage, file access patterns
 - [ ] **Windsurf** — parse cascade session logs if available
 - [ ] **Gemini CLI** — parse session JSONL files (session directory already discovered)
 - [ ] **Zed** — parse AI thread database (path already discovered in adapter)
 
 ### Secondary Adapters (Config Reading)
-- [ ] **Ollama** — read model manifest, detect served models, check API binding (local vs. network)
+- [x] **Ollama** — reads model manifests, reports model count/sizes, detects network-exposed API via OLLAMA_HOST
 - [ ] **LM Studio** — read model catalog, detect API server configuration
 - [ ] **ChatGPT Desktop** — read config if accessible, detect process
 - [ ] **Copilot** — parse VS Code extension telemetry/state for session-like data
 
 ### Adapter Risk Detection
-- [ ] Add risk detection to Cursor adapter (MCP auto-approve, broad permissions)
-- [ ] Add risk detection to Codex adapter (trusted projects, auto-mode)
-- [ ] Add risk detection to Zed adapter (extensions with network access, external agents)
-- [ ] Add risk detection to Cline/Roo adapter (auto-approve settings)
+- [x] Add risk detection to Cursor adapter (MCP risks via AIRiskEngine)
+- [x] Add risk detection to Codex adapter (suspicious bash, sensitive files, desktop mode, trusted projects, MCP risks)
+- [x] Add risk detection to Zed adapter (external agents, extension count, MCP risks)
+- [x] Add risk detection to Cline/Roo adapter (auto-approve, alwaysAllow on MCP servers, MCP risks)
+- [x] Add risk detection to Ollama adapter (network-exposed API)
 
 ---
 
@@ -182,6 +183,22 @@ Long-term capabilities for deeper runtime visibility.
 - [ ] Detect unexpected outbound connections from MCP server processes
 - [ ] Monitor for data exfiltration via MCP server-initiated network traffic
 - [ ] Cross-reference with file access patterns (read sensitive file → network connection)
+
+---
+
+## Revisit (deferred items from earlier milestones)
+
+### From M1
+- [ ] Persist sessions continuously, not just on manual security scan trigger
+- [ ] Track resolution reason (false positive, mitigated, accepted) in dismiss UI
+- [ ] Show resolved vs. open signal counts in severity overview
+
+### From M2
+- [ ] Snapshot individual MCP tool definitions (name, description, inputSchema) — currently only snapshots config-level data
+- [ ] Show config diff view in MCP server card when drift is detected
+- [ ] Visualize cross-server data flow paths in MCP view
+- [ ] Supply chain: alert on resolved package version changes between scans
+- [ ] Supply chain: show version history in MCP server card
 
 ---
 
