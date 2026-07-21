@@ -35,29 +35,27 @@ Complete and connect features that are already partially built but not yet expos
 The MCP view now shows config and usage. Next step: detect the threats described in the [MCP threat model](https://kondasecurity.com/blog/mcp-threat-model-trust-boundaries/) and [attack surface](https://kondasecurity.com/blog/mcp-attack-surface-what-security-teams-miss/) posts.
 
 ### Tool Description Scanning (AISVS C10.4.2)
-- [ ] On config load, read actual tool descriptions from MCP server connections (not just server names)
-- [ ] Scan tool descriptions for injection patterns (instruction-like content, references to sensitive paths, embedded commands)
-- [ ] Surface findings as risk signals with category `.toolDescriptionInjection`
+- [x] Read tool descriptions from Claude Desktop session files (`remoteMcpServersConfig` with full schemas)
+- [x] Scan tool descriptions for injection patterns (instruction-like content, references to sensitive paths, embedded commands, cross-tool references)
+- [x] Surface findings as risk signals with category `.toolDescriptionInjection`
 
 ### Tool Definition Snapshots & Drift Detection (AISVS C10.4.8)
-- [ ] Snapshot MCP tool definitions (name, description, input schema) on each scan
-- [ ] Diff against previous snapshot; alert on changes (new tools, removed tools, description changes)
+- [x] Diff current config against previous snapshot; alert on MCP servers added/removed and permission changes
+- [ ] Snapshot MCP tool definitions (name, description, input schema) on each scan — currently snapshots config, not individual tool schemas
 - [ ] Show diff view in MCP server card when drift is detected
-- [ ] Wire this to the existing `ai_config_snapshots` table
 
 ### Tool Shadowing Detection
-- [ ] Detect duplicate tool names registered across different MCP servers
-- [ ] Flag when a newly added server shadows an existing tool name
-- [ ] Surface as a risk signal with the conflicting server names
+- [x] Detect duplicate MCP server names registered across different tools
+- [x] Surface as a risk signal with the conflicting tool names and sources
 
 ### Dangerous Tool Combinations (AISVS C9.3.3, C9.3.4)
-- [ ] Define risky tool combination patterns (read_file + send_email, query_database + create_gist, read_email + execute_code)
-- [ ] Detect when a session uses a dangerous combination from session logs
-- [ ] Show combination risk in Agent Timeline and Risk Signals views
+- [x] Define risky tool combination patterns (read + send, query + create_gist, get + email, etc.)
+- [x] Detect when a session uses a dangerous combination from MCP calls across different servers
+- [x] Show combination risk in Risk Signals views
 
 ### Cross-Server Data Flow Monitoring (AISVS C9.3.5)
-- [ ] Track which MCP server produced data that was passed to another server's tool call
-- [ ] Flag cross-server flows involving sensitive data categories (PII, credentials, internal docs)
+- [x] Detect sessions using both sensitive servers (database, vault, credential) and external servers (email, slack, paste)
+- [x] Flag cross-server flows as warning-level signals
 - [ ] Visualize data flow paths in MCP view
 
 ### Supply Chain Indicators
@@ -214,16 +212,16 @@ These items have been considered and intentionally deferred:
 | File sharing exposure | **Detected** | — |
 | Long/runaway sessions | **Detected** | — |
 | Tokenmaxxing | **Detected** | — |
-| Tool description injection | Not detected | M2 |
-| Tool definition drift | Schema exists, not wired | M1 + M2 |
-| Tool shadowing | Not detected | M2 |
-| Dangerous tool combinations | Not detected | M2 |
-| Cross-server confused deputy | Not detected | M2 |
-| Supply chain version changes | Not detected | M2 |
+| Tool description injection | **Detected** (Claude Desktop schemas) | M2 |
+| Tool definition drift | **Detected** (config snapshot diffing) | M1 + M2 |
+| Tool shadowing | **Detected** | M2 |
+| Dangerous tool combinations | **Detected** | M2 |
+| Cross-server confused deputy | **Detected** (via cross-server flow) | M2 |
+| Supply chain version changes | Partial (unpinned detected, version tracking pending) | M2 |
 | Tool response injection | Not detected | M6 |
 | Tool annotation deception | Not detected | M6 |
 | Agent identity gap | Not tracked | M5 |
 | Intent classification | Not tracked | M5 |
 | OAuth scope abuse | Not tracked | M5 |
-| Cross-server data flow | Not tracked | M2 + M6 |
+| Cross-server data flow | **Detected** | M2 |
 | Behavioral anomalies | Not tracked | M6 |

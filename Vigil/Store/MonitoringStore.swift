@@ -291,8 +291,8 @@ final class MonitoringStore {
             }
         }
 
-        // Run risk detection across all adapters
-        let result = AISecurityEngine.scan(sessions: sessions)
+        // Run risk detection across all adapters (pass database for drift detection)
+        let result = AISecurityEngine.scan(sessions: sessions, database: database)
         securityScanResult = result
         database?.saveSecurityFindings(result.signals)
         database?.saveRiskSignals(result.signals)

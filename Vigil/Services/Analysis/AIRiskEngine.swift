@@ -167,6 +167,283 @@ enum AIRiskEngine {
         return signals
     }
 
+    // MARK: - Tool Shadowing Detection
+
+    static func detectToolShadowing(configs: [AIToolConfig]) -> [AISecuritySignal] {
+        var signals: [AISecuritySignal] = []
+
+        // Build a map of tool names to the servers that provide them
+        // MCP tool names follow: mcp__<server>__<tool>
+        // If two servers register a tool with the same name, one shadows the other
+        var toolProviders: [String: [(server: String, tool: String, source: String)]] = [:]
+
+        for config in configs {
+            for server in config.mcpServerDetails {
+                // Each auto-approved tool name is a known tool on this server
+                for toolName in server.autoApprovedTools {
+                    let key = toolName.lowercased()
+                    toolProviders[key, default: []].append(
+                        (server: server.name, tool: config.tool, source: server.source)
+                    )
+                }
+            }
+        }
+
+        // Also check for servers with identical names across different tools
+        var serverNames: [String: [(tool: String, source: String)]] = [:]
+        for config in configs {
+            for server in config.mcpServerDetails {
+                serverNames[server.name, default: []].append(
+                    (tool: config.tool, source: server.source)
+                )
+            }
+        }
+
+        for (name, providers) in serverNames where providers.count > 1 {
+            let tools = providers.map { "\($0.tool) (\($0.source))" }.joined(separator: ", ")
+            signals.append(AISecuritySignal(
+                category: .toolShadowing,
+                severity: .concern,
+                title: "MCP server name registered in multiple tools",
+                detail: "Server \"\(name)\" is configured in \(providers.count) tools: \(tools). If both are active, tool calls could route to an unintended server.",
+                evidence: "Server: \(name)"
+            ))
+        }
+
+        return signals
+    }
+
+    // MARK: - Dangerous Tool Combination Detection
+
+    static func detectDangerousCombinations(sessions: [AISessionLog]) -> [AISecuritySignal] {
+        var signals: [AISecuritySignal] = []
+
+        let dangerousPatterns: [(read: String, write: String, risk: String)] = [
+            ("read", "send", "data exfiltration via messaging"),
+            ("read", "email", "data exfiltration via email"),
+            ("read", "post", "data exfiltration via HTTP"),
+            ("get", "send", "data exfiltration via messaging"),
+            ("get", "email", "data exfiltration via email"),
+            ("query", "create_gist", "database content published to gist"),
+            ("query", "post", "database content sent externally"),
+            ("search", "send", "search results forwarded externally"),
+            ("list", "upload", "listed data uploaded externally"),
+            ("read_file", "send_message", "file content sent via messaging"),
+            ("get_secret", "post", "secret exfiltrated via HTTP"),
+        ]
+
+        for session in sessions {
+            guard session.mcpCalls.count >= 2 else { continue }
+
+            let serverNames = Set(session.mcpCalls.map(\.serverName))
+            guard serverNames.count >= 2 else { continue }
+
+            let toolNames = session.mcpCalls.map { $0.toolName.lowercased() }
+
+            for pattern in dangerousPatterns {
+                let hasRead = toolNames.contains { $0.contains(pattern.read) }
+                let hasWrite = toolNames.contains { $0.contains(pattern.write) }
+
+                if hasRead && hasWrite {
+                    let readServers = session.mcpCalls
+                        .filter { $0.toolName.lowercased().contains(pattern.read) }
+                        .map(\.serverName)
+                    let writeServers = session.mcpCalls
+                        .filter { $0.toolName.lowercased().contains(pattern.write) }
+                        .map(\.serverName)
+
+                    // Only flag if the read and write hit different servers
+                    guard Set(readServers).intersection(Set(writeServers)).isEmpty else { continue }
+
+                    signals.append(AISecuritySignal(
+                        category: .toolCombination,
+                        severity: .concern,
+                        title: "Potentially dangerous tool combination",
+                        detail: "Session used \(pattern.read)-type tools on \(readServers.first ?? "?") and \(pattern.write)-type tools on \(writeServers.first ?? "?") — risk: \(pattern.risk).",
+                        evidence: "Tools: \(toolNames.joined(separator: ", "))",
+                        sessionID: session.id,
+                        projectPath: session.projectPath
+                    ))
+                    break
+                }
+            }
+        }
+
+        return signals
+    }
+
+    // MARK: - Cross-Server Data Flow Detection
+
+    static func detectCrossServerFlows(sessions: [AISessionLog]) -> [AISecuritySignal] {
+        var signals: [AISecuritySignal] = []
+
+        let sensitiveServerPatterns = [
+            "database", "db", "postgres", "mysql", "mongo", "redis",
+            "secret", "vault", "credential", "keychain",
+            "internal", "private", "admin",
+        ]
+
+        let externalServerPatterns = [
+            "email", "gmail", "mail", "outlook",
+            "slack", "discord", "telegram", "chat",
+            "gist", "pastebin", "paste",
+            "webhook", "http", "api",
+            "drive", "dropbox", "s3",
+        ]
+
+        for session in sessions {
+            guard session.mcpCalls.count >= 2 else { continue }
+
+            let servers = session.mcpCalls.map(\.serverName)
+            let uniqueServers = Set(servers)
+            guard uniqueServers.count >= 2 else { continue }
+
+            let sensitiveServers = uniqueServers.filter { server in
+                let lower = server.lowercased()
+                return sensitiveServerPatterns.contains { lower.contains($0) }
+            }
+
+            let externalServers = uniqueServers.filter { server in
+                let lower = server.lowercased()
+                return externalServerPatterns.contains { lower.contains($0) }
+            }
+
+            if !sensitiveServers.isEmpty && !externalServers.isEmpty {
+                signals.append(AISecuritySignal(
+                    category: .crossServerFlow,
+                    severity: .warning,
+                    title: "Data flow from sensitive to external MCP server",
+                    detail: "Session accessed sensitive server(s) \(sensitiveServers.joined(separator: ", ")) and external server(s) \(externalServers.joined(separator: ", ")). Data may have flowed between them via the shared context window.",
+                    evidence: "All MCP servers in session: \(uniqueServers.sorted().joined(separator: ", "))",
+                    sessionID: session.id,
+                    projectPath: session.projectPath
+                ))
+            }
+        }
+
+        return signals
+    }
+
+    // MARK: - Config Drift Detection
+
+    static func detectConfigDrift(configs: [AIToolConfig], database: Database?) -> [AISecuritySignal] {
+        guard let database else { return [] }
+        var signals: [AISecuritySignal] = []
+
+        for config in configs {
+            let toolID = AIInventoryEntry.toolID(from: config.tool)
+            guard let previous = database.loadLatestConfigSnapshot(toolID: toolID) else { continue }
+
+            guard let prevData = previous.configJSON.data(using: .utf8),
+                  let prevDict = try? JSONSerialization.jsonObject(with: prevData) as? [String: Any] else {
+                continue
+            }
+
+            let prevMCP = prevDict["mcpServers"] as? [String] ?? []
+            let currentMCP = config.mcpServers
+
+            let added = Set(currentMCP).subtracting(Set(prevMCP))
+            let removed = Set(prevMCP).subtracting(Set(currentMCP))
+
+            for name in added {
+                signals.append(AISecuritySignal(
+                    category: .configDrift,
+                    severity: .concern,
+                    title: "New MCP server added to \(config.tool)",
+                    detail: "MCP server \"\(name)\" was added since the last scan. Review its configuration and permissions.",
+                    evidence: "Tool: \(config.tool), Server: \(name)"
+                ))
+            }
+
+            for name in removed {
+                signals.append(AISecuritySignal(
+                    category: .configDrift,
+                    severity: .info,
+                    title: "MCP server removed from \(config.tool)",
+                    detail: "MCP server \"\(name)\" was removed since the last scan.",
+                    evidence: "Tool: \(config.tool), Server: \(name)"
+                ))
+            }
+
+            // Check permissions changes
+            let prevHash = previous.permissionsHash ?? ""
+            let currentHash = "a:\(config.permissions.totalAllowed)|d:\(config.permissions.totalDenied)|q:\(config.permissions.totalAsk)"
+            if !prevHash.isEmpty && prevHash != currentHash {
+                signals.append(AISecuritySignal(
+                    category: .configDrift,
+                    severity: .info,
+                    title: "Permission changes in \(config.tool)",
+                    detail: "Permission counts changed from \(prevHash) to \(currentHash).",
+                    evidence: "Previous: \(prevHash), Current: \(currentHash)"
+                ))
+            }
+        }
+
+        return signals
+    }
+
+    // MARK: - Tool Description Injection Scanning
+
+    static func detectToolDescriptionInjection(toolDefinitions: [MCPToolDefinition]) -> [AISecuritySignal] {
+        var signals: [AISecuritySignal] = []
+
+        let injectionPatterns: [(pattern: String, risk: String)] = [
+            ("ignore previous", "instruction override attempt"),
+            ("ignore above", "instruction override attempt"),
+            ("disregard", "instruction override attempt"),
+            ("you must", "directive injection"),
+            ("you should", "directive injection"),
+            ("always ", "directive injection"),
+            ("never ", "directive injection"),
+            ("do not tell", "secrecy instruction"),
+            ("don't tell", "secrecy instruction"),
+            ("keep secret", "secrecy instruction"),
+            ("hidden instruction", "explicit injection marker"),
+            ("system prompt", "prompt manipulation"),
+            ("<system>", "XML injection attempt"),
+            ("</system>", "XML injection attempt"),
+            ("<tool_result>", "XML injection attempt"),
+            ("~/.ssh", "sensitive path reference"),
+            ("~/.aws", "sensitive path reference"),
+            ("~/.gnupg", "sensitive path reference"),
+            (".env", "sensitive file reference"),
+            ("id_rsa", "SSH key reference"),
+            ("credentials", "credential file reference"),
+            ("api_key", "API key reference"),
+            ("access_token", "token reference"),
+            ("password", "password reference"),
+            ("curl ", "embedded command"),
+            ("wget ", "embedded command"),
+            ("exec(", "code execution"),
+            ("eval(", "code execution"),
+            ("base64", "encoding/obfuscation"),
+            ("send_email", "cross-tool reference"),
+            ("send_message", "cross-tool reference"),
+            ("create_gist", "cross-tool reference"),
+            ("upload", "exfiltration verb"),
+        ]
+
+        for tool in toolDefinitions {
+            let description = tool.description.lowercased()
+            guard !description.isEmpty else { continue }
+
+            for (pattern, risk) in injectionPatterns {
+                if description.contains(pattern.lowercased()) {
+                    signals.append(AISecuritySignal(
+                        category: .toolDescriptionInjection,
+                        severity: pattern.contains("ignore") || pattern.contains("system") ? .warning : .concern,
+                        title: "Suspicious content in MCP tool description",
+                        detail: "Tool \"\(tool.name)\" on server \"\(tool.serverName)\" has a description containing \"\(pattern)\" — \(risk).",
+                        evidence: "Description excerpt: \(String(tool.description.prefix(200)))"
+                    ))
+                    break
+                }
+            }
+        }
+
+        return signals
+    }
+
     // MARK: - Shared Helpers
 
     private static let sensitivePatterns: [(pattern: String, matchType: PatternMatch)] = [

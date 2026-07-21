@@ -38,6 +38,12 @@ enum SignalCategory: String, CaseIterable {
     case mcpRisk
     case fileSharingExposure
     case excessiveAgency
+    case toolShadowing
+    case toolCombination
+    case configDrift
+    case supplyChain
+    case toolDescriptionInjection
+    case crossServerFlow
 
     var displayName: String {
         switch self {
@@ -50,6 +56,12 @@ enum SignalCategory: String, CaseIterable {
         case .mcpRisk: "MCP Risk"
         case .fileSharingExposure: "File Sharing Exposure"
         case .excessiveAgency: "Excessive Agency"
+        case .toolShadowing: "Tool Shadowing"
+        case .toolCombination: "Dangerous Combination"
+        case .configDrift: "Config Drift"
+        case .supplyChain: "Supply Chain"
+        case .toolDescriptionInjection: "Description Injection"
+        case .crossServerFlow: "Cross-Server Flow"
         }
     }
 
@@ -64,6 +76,12 @@ enum SignalCategory: String, CaseIterable {
         case .mcpRisk: "server.rack"
         case .fileSharingExposure: "icloud.and.arrow.up"
         case .excessiveAgency: "exclamationmark.shield"
+        case .toolShadowing: "square.on.square.badge.person.crop"
+        case .toolCombination: "arrow.triangle.merge"
+        case .configDrift: "arrow.triangle.2.circlepath"
+        case .supplyChain: "shippingbox"
+        case .toolDescriptionInjection: "text.badge.xmark"
+        case .crossServerFlow: "arrow.left.arrow.right"
         }
     }
 }

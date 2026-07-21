@@ -59,6 +59,15 @@ struct MCPServerDetail {
     let source: String
 }
 
+// MARK: - MCP Tool Definition (Full schema from Claude Desktop sessions)
+
+struct MCPToolDefinition {
+    let serverName: String
+    let name: String
+    let description: String
+    let inputSchemaJSON: String
+}
+
 // MARK: - Hook Detail
 
 struct HookDetail {
