@@ -43,7 +43,7 @@ struct AIFacadeTests {
         #expect(!result.signals.isEmpty)
     }
 
-    @Test("AISecurityEngine.scan returns empty for benign session")
+    @Test("AISecurityEngine.scan returns no session signals for benign session")
     func securityEngineBenign() {
         var session = AISessionLog(id: "benign-test", projectPath: "/test")
         session.humanTurns = 1
@@ -51,8 +51,11 @@ struct AIFacadeTests {
 
         let result = AISecurityEngine.scan(sessions: [session])
         #expect(result.sessions.count == 1)
-        let nonInfoSignals = result.signals.filter { $0.severity > .info }
-        #expect(nonInfoSignals.isEmpty)
+        // Filter to signals from this specific session — config-based signals
+        // from real adapters on this machine are expected and valid
+        let sessionSignals = result.signals.filter { $0.sessionID == "benign-test" }
+        let nonInfoSessionSignals = sessionSignals.filter { $0.severity > .info }
+        #expect(nonInfoSessionSignals.isEmpty)
     }
 
     // MARK: - AIProcessCatalog Facade

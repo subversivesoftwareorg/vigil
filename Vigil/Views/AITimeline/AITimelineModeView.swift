@@ -3,22 +3,19 @@ import SwiftUI
 /// Agent Timeline: chronological view of AI sessions across all tools.
 struct AITimelineModeView: View {
     @Environment(MonitoringStore.self) private var store
-    @State private var sessions: [AISessionLog] = []
+    @State private var sessions: [(tool: String, session: AISessionLog)] = []
     @State private var selectedTool: String? = nil
     @State private var isLoading = true
 
-    private var filteredSessions: [AISessionLog] {
-        let sorted = sessions.sorted { ($0.startedAt ?? .distantPast) > ($1.startedAt ?? .distantPast) }
-        return sorted
+    private var filteredSessions: [(tool: String, session: AISessionLog)] {
+        let filtered = selectedTool == nil
+            ? sessions
+            : sessions.filter { $0.tool == selectedTool }
+        return filtered.sorted { ($0.session.startedAt ?? .distantPast) > ($1.session.startedAt ?? .distantPast) }
     }
 
     private var toolNames: [String] {
-        let names = Set(sessions.compactMap { session -> String? in
-            AIAdapterRegistry.adapters.first { adapter in
-                adapter.parseSessions(projectFilter: nil).contains { $0.id == session.id }
-            }?.displayName
-        })
-        return names.sorted()
+        Set(sessions.map(\.tool)).sorted()
     }
 
     var body: some View {
@@ -33,13 +30,15 @@ struct AITimelineModeView: View {
                 ContentUnavailableView(
                     "No Sessions Found",
                     systemImage: "clock.arrow.2.circlepath",
-                    description: Text("Run an AI security scan to populate the timeline.")
+                    description: Text(selectedTool != nil
+                        ? "No sessions found for \(selectedTool!)."
+                        : "Run an AI security scan to populate the timeline.")
                 )
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        ForEach(filteredSessions) { session in
-                            SessionTimelineCard(session: session)
+                        ForEach(filteredSessions, id: \.session.id) { entry in
+                            SessionTimelineCard(session: entry.session, toolName: entry.tool)
                         }
                     }
                     .padding(16)
@@ -48,7 +47,14 @@ struct AITimelineModeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
-            sessions = AIAdapterRegistry.parseAllSessions()
+            var results: [(tool: String, session: AISessionLog)] = []
+            for adapter in AIAdapterRegistry.adapters {
+                let adapterSessions = adapter.parseSessions(projectFilter: nil)
+                for session in adapterSessions {
+                    results.append((tool: adapter.displayName, session: session))
+                }
+            }
+            sessions = results
             isLoading = false
         }
     }
@@ -63,11 +69,22 @@ struct AITimelineModeView: View {
                 Text("Agent Timeline")
                     .font(.title2)
                     .fontWeight(.bold)
-                Text("\(sessions.count) session\(sessions.count == 1 ? "" : "s") across all tools")
+                Text("\(filteredSessions.count) session\(filteredSessions.count == 1 ? "" : "s")\(selectedTool != nil ? " from \(selectedTool!)" : " across all tools")")
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
             Spacer()
+
+            if toolNames.count > 1 {
+                Picker("Tool", selection: $selectedTool) {
+                    Text("All Tools").tag(nil as String?)
+                    ForEach(toolNames, id: \.self) { name in
+                        Text(name).tag(name as String?)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 160)
+            }
         }
         .padding(16)
     }
@@ -77,6 +94,7 @@ struct AITimelineModeView: View {
 
 private struct SessionTimelineCard: View {
     let session: AISessionLog
+    var toolName: String = ""
 
     @State private var isExpanded = false
 
@@ -84,10 +102,20 @@ private struct SessionTimelineCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(shortenPath(session.projectPath))
-                        .font(.callout)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(shortenPath(session.projectPath))
+                            .font(.callout)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                        if !toolName.isEmpty {
+                            Text(toolName)
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.purple.opacity(0.1), in: .capsule)
+                                .foregroundStyle(.purple)
+                        }
+                    }
                     HStack(spacing: 8) {
                         if let start = session.startedAt {
                             Text(start, style: .date)

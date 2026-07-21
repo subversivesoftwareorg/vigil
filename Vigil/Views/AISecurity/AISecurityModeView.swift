@@ -129,7 +129,9 @@ struct AISecurityModeView: View {
                     .padding(.vertical, 20)
             } else {
                 ForEach(filtered) { signal in
-                    SignalCard(signal: signal)
+                    SignalCard(signal: signal) {
+                        store.resolveRiskSignal(id: signal.id)
+                    }
                 }
             }
         }
@@ -218,6 +220,7 @@ private struct SeverityBadge: View {
 
 private struct SignalCard: View {
     let signal: AISecuritySignal
+    var onResolve: (() -> Void)?
     @State private var expanded = false
 
     var body: some View {
@@ -265,10 +268,23 @@ private struct SignalCard: View {
                             .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
                     }
 
-                    if let sessionID = signal.sessionID {
-                        Text("Session: \(sessionID)")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                    HStack {
+                        if let sessionID = signal.sessionID {
+                            Text("Session: \(sessionID)")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Spacer()
+                        if let onResolve {
+                            Button {
+                                withAnimation { onResolve() }
+                            } label: {
+                                Label("Dismiss", systemImage: "xmark.circle")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
                     }
                 }
                 .padding(.leading, 28)

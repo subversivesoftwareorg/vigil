@@ -28,6 +28,7 @@ struct MainWindowView: View {
                 Section("AI Activity") {
                     sidebarItem(.aiOverview)
                     sidebarItem(.aiTimeline)
+                    sidebarItem(.aiActivity)
                     sidebarItem(.aiLogs)
                 }
 

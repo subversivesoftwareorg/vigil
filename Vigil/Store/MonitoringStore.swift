@@ -246,32 +246,106 @@ final class MonitoringStore {
     // MARK: - AI Security Scanning
 
     /// Run a security scan on all AI session logs across all adapters.
-    /// Also persists parsed sessions to the database for the agent timeline.
+    /// Also persists parsed sessions, config snapshots, and MCP server tracking.
     func runSecurityScan() {
         isScanningSecurity = true
 
         // Parse sessions from all adapters
         let sessions = AIAdapterRegistry.parseAllSessions()
 
-        // Persist parsed sessions to the timeline database
         if let database {
+            // Persist parsed sessions to the timeline database
             for adapter in AIAdapterRegistry.adapters {
                 let adapterSessions = adapter.parseSessions(projectFilter: nil)
                 for session in adapterSessions {
                     database.persistSession(session, toolID: adapter.toolID)
                 }
             }
+
+            // Snapshot configs and track MCP servers
+            let configs = AIAdapterRegistry.discoverAllConfigs()
+            for config in configs {
+                let toolID = AIInventoryEntry.toolID(from: config.tool)
+                recordConfiguredTool(config)
+
+                // Config snapshot: serialize key fields to JSON for drift detection
+                let snapshot = configSnapshotJSON(config)
+                let hash = permissionsHash(config.permissions)
+                database.insertConfigSnapshot(
+                    toolID: toolID,
+                    configJSON: snapshot,
+                    layersCount: config.layers.count,
+                    permissionsHash: hash
+                )
+
+                // MCP server tracking
+                for server in config.mcpServerDetails {
+                    let envSummary = server.envVars.keys.sorted().joined(separator: ",")
+                    database.upsertMCPServer(
+                        toolID: toolID,
+                        serverName: server.name,
+                        command: server.command,
+                        envVars: envSummary
+                    )
+                }
+            }
         }
 
-        // Run risk detection (backward compat: uses Claude adapter for now)
+        // Run risk detection across all adapters
         let result = AISecurityEngine.scan(sessions: sessions)
         securityScanResult = result
         database?.saveSecurityFindings(result.signals)
-
-        // Also persist to the new risk_signals table
         database?.saveRiskSignals(result.signals)
 
         isScanningSecurity = false
+    }
+
+    // MARK: - Config Snapshot Helpers
+
+    private func configSnapshotJSON(_ config: AIToolConfig) -> String {
+        var dict: [String: Any] = [
+            "tool": config.tool,
+            "layers": config.layers.map(\.label),
+            "mcpServers": config.mcpServers,
+            "hasHooks": config.hasHooks,
+            "autoMode": config.autoMode,
+            "memoryEnabled": config.memoryEnabled,
+            "managedPolicy": config.managedPolicy,
+            "allowed": config.permissions.totalAllowed,
+            "denied": config.permissions.totalDenied,
+            "ask": config.permissions.totalAsk,
+        ]
+        if let sandbox = config.sandboxMode { dict["sandboxMode"] = sandbox }
+        if let network = config.networkAccess { dict["networkAccess"] = network }
+        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+
+    private func permissionsHash(_ permissions: PermissionSummary) -> String {
+        let parts = [
+            "a:\(permissions.totalAllowed)",
+            "d:\(permissions.totalDenied)",
+            "q:\(permissions.totalAsk)"
+        ]
+        return parts.joined(separator: "|")
+    }
+
+    /// Resolve (dismiss) a risk signal by ID. Removes it from the current scan result
+    /// and marks it resolved in the database.
+    func resolveRiskSignal(id: UUID) {
+        database?.resolveRiskSignal(id: id.uuidString)
+        if let result = securityScanResult {
+            let filtered = result.signals.filter { $0.id != id }
+            securityScanResult = AISecurityScanResult(
+                scanDate: result.scanDate,
+                signals: filtered,
+                sessions: result.sessions,
+                projectCount: result.projectCount
+            )
+        }
     }
 
     /// Load previously persisted scan results from the database.
