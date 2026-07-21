@@ -24,7 +24,7 @@ struct OllamaAdapter: AIToolAdapter {
 
         guard fm.fileExists(atPath: ollamaPath) else { return nil }
 
-        var foundLayers = [SettingsLayer(path: ollamaPath, label: "Local models")]
+        let foundLayers = [SettingsLayer(path: ollamaPath, label: "Local models")]
 
         // Discover downloaded models from manifests
         let models = discoverModels()
@@ -36,9 +36,6 @@ struct OllamaAdapter: AIToolAdapter {
             && ollamaHost != "localhost"
             && ollamaHost != "127.0.0.1:11434"
             && ollamaHost != "localhost:11434"
-
-        // Check for SSH keys (Ollama generates these for registry auth)
-        let hasSSHKeys = fm.fileExists(atPath: "\(ollamaPath)/id_ed25519")
 
         // Build summary
         var summary: [String] = []

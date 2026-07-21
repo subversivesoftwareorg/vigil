@@ -5,14 +5,69 @@ extension Notification.Name {
 }
 
 /// The root view for the Vigil window.
-/// Provides mode switching between the visualization modes, grouped by category.
+/// Supports two modes: Glance (physics-based overview) and Advanced (sidebar navigation).
 struct MainWindowView: View {
     @Environment(MonitoringStore.self) private var store
     @State private var selectedMode: ViewMode = .overview
     @AppStorage("hasSeenWalkthrough") private var hasSeenWalkthrough = false
+    @AppStorage("vigilViewStyle") private var viewStyle: ViewStyle = .glance
     @State private var showingWalkthrough = false
 
     var body: some View {
+        Group {
+            switch viewStyle {
+            case .glance:
+                glanceLayout
+            case .advanced:
+                advancedLayout
+            }
+        }
+        .navigationTitle("Vigil")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Picker("View", selection: $viewStyle) {
+                    Label("Glance", systemImage: "circle.hexagongrid")
+                        .tag(ViewStyle.glance)
+                    Label("Advanced", systemImage: "sidebar.left")
+                        .tag(ViewStyle.advanced)
+                }
+                .pickerStyle(.segmented)
+                .help(viewStyle == .glance ? "Switch to Advanced mode" : "Switch to Glance mode")
+            }
+        }
+        .sheet(isPresented: $showingWalkthrough) {
+            WalkthroughView()
+        }
+        .task {
+            let processMonitor = ProcessMonitor()
+            let fileMonitor = FileMonitor()
+            let database = try? Database()
+            store.configure(processSource: processMonitor, fileSource: fileMonitor,
+                            database: database)
+            await store.startMonitoring()
+        }
+        .onAppear {
+            if !hasSeenWalkthrough {
+                showingWalkthrough = true
+                hasSeenWalkthrough = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showWalkthrough)) { _ in
+            showingWalkthrough = true
+        }
+    }
+
+    // MARK: - Glance Layout
+
+    @ViewBuilder
+    private var glanceLayout: some View {
+        GlanceView()
+    }
+
+    // MARK: - Advanced Layout
+
+    @ViewBuilder
+    private var advancedLayout: some View {
         NavigationSplitView {
             List(selection: $selectedMode) {
                 Section {
@@ -74,27 +129,6 @@ struct MainWindowView: View {
                 FileSharingModeView()
             }
         }
-        .navigationTitle("Vigil")
-        .sheet(isPresented: $showingWalkthrough) {
-            WalkthroughView()
-        }
-        .task {
-            let processMonitor = ProcessMonitor()
-            let fileMonitor = FileMonitor()
-            let database = try? Database()
-            store.configure(processSource: processMonitor, fileSource: fileMonitor,
-                            database: database)
-            await store.startMonitoring()
-        }
-        .onAppear {
-            if !hasSeenWalkthrough {
-                showingWalkthrough = true
-                hasSeenWalkthrough = true
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showWalkthrough)) { _ in
-            showingWalkthrough = true
-        }
     }
 
     private func sidebarItem(_ mode: ViewMode) -> some View {
@@ -105,6 +139,13 @@ struct MainWindowView: View {
     func showWalkthrough() {
         showingWalkthrough = true
     }
+}
+
+// MARK: - View Style
+
+enum ViewStyle: String, CaseIterable {
+    case glance
+    case advanced
 }
 
 // MARK: - View Mode
