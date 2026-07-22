@@ -31,6 +31,17 @@ BUILD_DIR="$PROJECT_DIR/.build/apple/Products/Release"
 STAGING_DIR="$PROJECT_DIR/.build/dmg-staging"
 NOTARIZE_TIMEOUT="15m"
 
+# ── Verify clean working directory ──────────────────────────────
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "Error: Working directory has uncommitted changes."
+        echo "Commit or stash them before building a release."
+        echo ""
+        git status --short
+        exit 1
+    fi
+fi
+
 # ── Auto-increment build number ──────────────────────────────────
 PLIST="$PROJECT_DIR/Resources/Info.plist"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
