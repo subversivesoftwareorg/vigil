@@ -119,6 +119,19 @@ Shift from "here's what's happening" to "here's what you should do about it."
 - [ ] AI Inventory filtering by category, provider, evidence level
 - [ ] Date range picker on Agent Timeline and AI Logs
 
+### Capability Ledger (permissions across all principals)
+
+One view answering "what is allowed to act on my machine, when, and with what scope?" Permissions live in three tenses: what a tool *could* do (config), what *will* run unattended (schedules), and what was *actually* granted (audit logs).
+
+- [x] Unattended agent discovery: Cowork `scheduled-tasks.json` (cron, folder grants, Chrome domain allowlists, permission modes) + crontab entries invoking AI CLIs headlessly
+- [x] Unattended agent risk rules: browser automation without supervision, self-modifying schedules, package installation, headless no-prompt invocations
+- [x] Unattended Agents section in AI Overview
+- [ ] Per-MCP-tool grant inventory: connect `mcp__server__tool` entries in settings allow-lists back to their servers in the MCP view
+- [ ] Codex sandbox policy display: per-thread `writableRoots`, `networkAccess`, `approvalPolicy` from `.codex-global-state.json`
+- [ ] Permission decision trail: parse Cowork audit-log `permission_request`/`permission_response` pairs (HMAC-signed) to show what was asked and granted per session
+- [ ] SKILL.md capability parsing for scheduled tasks (structured, beyond keyword heuristics)
+- [ ] Unified ledger view: every principal (tool, agent, scheduled task, cron job, MCP server) with file scope, shell/network/browser capability, schedule, and approval mode
+
 ### Remediation Guidance
 - [ ] Attach remediation steps to each risk signal category (e.g., "Pin this npx package by adding @version")
 - [ ] Link risk signals to OWASP AISVS control references

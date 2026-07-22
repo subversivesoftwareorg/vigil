@@ -330,6 +330,65 @@ struct AIRiskEngineTests {
         #expect(signals.isEmpty)
     }
 
+    // MARK: - Unattended Agents
+
+    @Test("scheduled agent with browser automation flagged as concern")
+    func unattendedBrowserFlagged() {
+        let agent = UnattendedAgent(
+            id: "t1", kind: .coworkScheduledTask, name: "digest",
+            schedule: "0 0 * * *", enabled: true, sourcePath: "/tmp/SKILL.md",
+            folderAccess: ["/Users/x/marketing"],
+            browserDomains: ["x.com"], permissionMode: "follow_a_plan",
+            lastRunAt: nil, capabilities: ["Browser automation"]
+        )
+        let signals = AIRiskEngine.detectUnattendedAgentRisks(agents: [agent])
+        #expect(signals.contains { $0.title == "Unattended browser automation" && $0.severity == .concern })
+    }
+
+    @Test("self-modifying schedule flagged")
+    func selfModifyingScheduleFlagged() {
+        let agent = UnattendedAgent(
+            id: "t2", kind: .coworkScheduledTask, name: "review",
+            schedule: "30 6 * * 1", enabled: true, sourcePath: "/tmp/SKILL.md",
+            folderAccess: [], browserDomains: [], permissionMode: nil,
+            lastRunAt: nil, capabilities: ["Can modify its own schedule"]
+        )
+        let signals = AIRiskEngine.detectUnattendedAgentRisks(agents: [agent])
+        #expect(signals.contains { $0.title == "Scheduled agent can modify its own schedule" })
+    }
+
+    @Test("disabled agent produces no signals")
+    func disabledAgentSkipped() {
+        let agent = UnattendedAgent(
+            id: "t3", kind: .cronJob, name: "old-job",
+            schedule: "0 8 * * 1-5", enabled: false, sourcePath: "crontab",
+            folderAccess: [], browserDomains: [], permissionMode: nil,
+            lastRunAt: nil, capabilities: []
+        )
+        let signals = AIRiskEngine.detectUnattendedAgentRisks(agents: [agent])
+        #expect(signals.isEmpty)
+    }
+
+    @Test("crontab parsing finds AI CLI invocations")
+    func crontabParsing() {
+        let crontab = """
+        # comment line
+        0 8 * * 1-5 /opt/homebrew/bin/claude --print -p "do the thing"
+        30 2 * * * /usr/bin/backup-disk.sh
+        """
+        let agents = UnattendedAgentScanner.parseCrontab(crontab)
+        #expect(agents.count == 1)
+        #expect(agents.first?.kind == .cronJob)
+        #expect(agents.first?.capabilities.contains("Headless (no permission prompts)") == true)
+    }
+
+    @Test("cron descriptions are human readable")
+    func cronDescription() {
+        #expect(UnattendedAgent.describeCron("30 6 * * 1") == "Mondays at 6:30")
+        #expect(UnattendedAgent.describeCron("0 0 * * *") == "Daily at 0:00")
+        #expect(UnattendedAgent.describeCron("0 8 * * 1-5") == "Weekdays at 8:00")
+    }
+
     // MARK: - Helpers
 
     private func makeSession(commands: [String]) -> AISessionLog {

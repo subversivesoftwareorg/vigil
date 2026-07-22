@@ -383,6 +383,7 @@ struct GlanceView: View {
         case .toolDescriptionInjection: return "Inspect tool"
         case .crossServerFlow: return "Review flow"
         case .supplyChain: return "Pin versions"
+        case .unattendedAgent: return "Review schedule"
         default: return "Review"
         }
     }

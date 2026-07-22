@@ -7,6 +7,7 @@ struct AIOverviewModeView: View {
     @State private var configs: [AIToolConfig] = []
     @State private var privacyPostures: [AIPrivacyPosture] = []
     @State private var riskSignals: [AISecuritySignal] = []
+    @State private var unattendedAgents: [UnattendedAgent] = []
     @State private var isLoading = true
 
     var body: some View {
@@ -24,6 +25,9 @@ struct AIOverviewModeView: View {
                         toolsSummarySection
                         privacyPostureSection
                     }
+                    if !unattendedAgents.isEmpty {
+                        unattendedAgentsSection
+                    }
                     configPostureSection
                 }
                 .padding(24)
@@ -36,16 +40,19 @@ struct AIOverviewModeView: View {
     }
 
     private func loadData() async {
-        let (loadedConfigs, loadedPostures, loadedRisks) = await Task.detached {
+        let (loadedConfigs, loadedPostures, loadedRisks, loadedAgents) = await Task.detached {
             let c = AIAdapterRegistry.discoverAllConfigs()
             let p = MacOSPrivacyReader.readAll()
+            let agents = UnattendedAgentScanner.scanAll()
             var r = AIAdapterRegistry.detectAllRisks()
             r.append(contentsOf: AIRiskEngine.detectPrivacyRisks(postures: p))
-            return (c, p, r)
+            r.append(contentsOf: AIRiskEngine.detectUnattendedAgentRisks(agents: agents))
+            return (c, p, r, agents)
         }.value
         configs = loadedConfigs
         privacyPostures = loadedPostures
         riskSignals = loadedRisks
+        unattendedAgents = loadedAgents
         isLoading = false
     }
 
@@ -194,6 +201,78 @@ struct AIOverviewModeView: View {
                         }
                     }
                 }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background, in: .rect(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.03), radius: 2, y: 1)
+    }
+
+    // MARK: - Unattended Agents
+
+    @ViewBuilder
+    private var unattendedAgentsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "moon.zzz")
+                    .foregroundStyle(.indigo)
+                Text("Unattended Agents")
+                    .font(.headline)
+                Spacer()
+                Text("run without a human present")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            ForEach(unattendedAgents) { agent in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: agent.kind == .cronJob ? "terminal" : "calendar.badge.clock")
+                        .foregroundStyle(.indigo)
+                        .frame(width: 20)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Text(agent.name)
+                                .font(.callout)
+                                .fontWeight(.medium)
+                            Text(agent.kind.displayName)
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.indigo.opacity(0.1), in: .capsule)
+                                .foregroundStyle(.indigo)
+                            if !agent.enabled {
+                                Text("Disabled")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        Text(agent.scheduleDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if !agent.capabilities.isEmpty {
+                            Text(agent.capabilities.joined(separator: " \u{2022} "))
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+                        if !agent.folderAccess.isEmpty {
+                            Text("Access: \(agent.folderAccess.joined(separator: ", "))")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    Spacer()
+                    if let lastRun = agent.lastRunAt {
+                        Text("Last run \(lastRun, style: .relative) ago")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(10)
+                .background(.background, in: .rect(cornerRadius: 8))
             }
         }
         .padding(16)

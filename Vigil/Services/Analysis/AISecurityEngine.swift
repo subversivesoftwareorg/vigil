@@ -35,6 +35,10 @@ enum AISecurityEngine {
         let toolDefinitions = ClaudeDesktopAdapter().discoverToolDefinitions()
         signals.append(contentsOf: AIRiskEngine.detectToolDescriptionInjection(toolDefinitions: toolDefinitions))
 
+        // Unattended agents: Cowork scheduled tasks + AI cron jobs
+        let unattendedAgents = UnattendedAgentScanner.scanAll()
+        signals.append(contentsOf: AIRiskEngine.detectUnattendedAgentRisks(agents: unattendedAgents))
+
         // Deduplicate by title + evidence
         var seen = Set<String>()
         let deduped = signals.filter { signal in

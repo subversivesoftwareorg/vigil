@@ -44,6 +44,7 @@ enum SignalCategory: String, CaseIterable {
     case supplyChain
     case toolDescriptionInjection
     case crossServerFlow
+    case unattendedAgent
 
     var displayName: String {
         switch self {
@@ -62,6 +63,7 @@ enum SignalCategory: String, CaseIterable {
         case .supplyChain: "Supply Chain"
         case .toolDescriptionInjection: "Description Injection"
         case .crossServerFlow: "Cross-Server Flow"
+        case .unattendedAgent: "Unattended Agent"
         }
     }
 
@@ -82,6 +84,7 @@ enum SignalCategory: String, CaseIterable {
         case .supplyChain: "shippingbox"
         case .toolDescriptionInjection: "text.badge.xmark"
         case .crossServerFlow: "arrow.left.arrow.right"
+        case .unattendedAgent: "moon.zzz"
         }
     }
 }

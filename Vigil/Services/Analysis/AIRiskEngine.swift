@@ -444,6 +444,72 @@ enum AIRiskEngine {
         return signals
     }
 
+    // MARK: - Unattended Agent Detection
+
+    static func detectUnattendedAgentRisks(agents: [UnattendedAgent]) -> [AISecuritySignal] {
+        var signals: [AISecuritySignal] = []
+
+        for agent in agents where agent.enabled {
+            // Every unattended agent gets a baseline visibility signal
+            let scopeNote = agent.folderAccess.isEmpty
+                ? ""
+                : " Folder access: \(agent.folderAccess.joined(separator: ", "))."
+            signals.append(AISecuritySignal(
+                category: .unattendedAgent,
+                severity: .info,
+                title: "\(agent.kind.displayName) runs without supervision",
+                detail: "\"\(agent.name)\" runs \(agent.scheduleDescription.lowercased()) with no human present.\(scopeNote)",
+                evidence: "Source: \(agent.sourcePath)"
+            ))
+
+            // Self-modification of schedule
+            if agent.capabilities.contains("Can modify its own schedule") {
+                signals.append(AISecuritySignal(
+                    category: .unattendedAgent,
+                    severity: .concern,
+                    title: "Scheduled agent can modify its own schedule",
+                    detail: "\"\(agent.name)\" holds the ability to update or disable its own scheduled task — schedule changes may happen without your involvement.",
+                    evidence: "Source: \(agent.sourcePath)"
+                ))
+            }
+
+            // Browser automation while unattended
+            if !agent.browserDomains.isEmpty {
+                signals.append(AISecuritySignal(
+                    category: .unattendedAgent,
+                    severity: .concern,
+                    title: "Unattended browser automation",
+                    detail: "\"\(agent.name)\" drives a real browser on a schedule (mode: \(agent.permissionMode ?? "unknown")), limited to: \(agent.browserDomains.joined(separator: ", ")). Actions on these sites happen as you, unattended.",
+                    evidence: "Domains: \(agent.browserDomains.joined(separator: ", "))"
+                ))
+            }
+
+            // Package installation capability
+            if agent.capabilities.contains("Can install packages") {
+                signals.append(AISecuritySignal(
+                    category: .unattendedAgent,
+                    severity: .concern,
+                    title: "Unattended agent can install packages",
+                    detail: "\"\(agent.name)\" is permitted to install software while running unsupervised — a supply chain risk if any installed package is compromised.",
+                    evidence: "Source: \(agent.sourcePath)"
+                ))
+            }
+
+            // Headless CLI with no permission prompts
+            if agent.capabilities.contains("Headless (no permission prompts)") {
+                signals.append(AISecuritySignal(
+                    category: .unattendedAgent,
+                    severity: .concern,
+                    title: "Headless AI CLI invocation in crontab",
+                    detail: "\"\(agent.name)\" invokes an AI CLI non-interactively — it operates entirely on pre-approved permissions with nobody watching.",
+                    evidence: "Source: \(agent.sourcePath)"
+                ))
+            }
+        }
+
+        return signals
+    }
+
     // MARK: - Shared Helpers
 
     private static let sensitivePatterns: [(pattern: String, matchType: PatternMatch)] = [
