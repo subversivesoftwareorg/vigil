@@ -246,63 +246,76 @@ final class MonitoringStore {
     // MARK: - AI Security Scanning
 
     /// Run a security scan on all AI session logs across all adapters.
-    /// Also persists parsed sessions, config snapshots, and MCP server tracking.
+    /// Heavy I/O runs off the main thread; only UI state updates happen on MainActor.
     func runSecurityScan() {
         isScanningSecurity = true
+        let db = database
 
-        // Parse sessions from all adapters
-        let sessions = AIAdapterRegistry.parseAllSessions()
+        Task.detached {
+            // Invalidate cache so we get fresh data
+            AIAdapterRegistry.invalidateCache()
 
-        if let database {
-            // Persist parsed sessions to the timeline database
+            // Single pass: read configs and parse sessions once
+            var allSessions: [AISessionLog] = []
+            var adapterSessions: [(toolID: String, sessions: [AISessionLog])] = []
+            let configs = AIAdapterRegistry.discoverAllConfigs()
+
             for adapter in AIAdapterRegistry.adapters {
-                let adapterSessions = adapter.parseSessions(projectFilter: nil)
-                for session in adapterSessions {
-                    database.persistSession(session, toolID: adapter.toolID)
+                let sessions = adapter.parseSessions(projectFilter: nil)
+                allSessions.append(contentsOf: sessions)
+                if !sessions.isEmpty {
+                    adapterSessions.append((toolID: adapter.toolID, sessions: sessions))
                 }
             }
 
-            // Snapshot configs and track MCP servers
-            let configs = AIAdapterRegistry.discoverAllConfigs()
-            for config in configs {
-                let toolID = AIInventoryEntry.toolID(from: config.tool)
-                recordConfiguredTool(config)
-
-                // Config snapshot: serialize key fields to JSON for drift detection
-                let snapshot = configSnapshotJSON(config)
-                let hash = permissionsHash(config.permissions)
-                database.insertConfigSnapshot(
-                    toolID: toolID,
-                    configJSON: snapshot,
-                    layersCount: config.layers.count,
-                    permissionsHash: hash
-                )
-
-                // MCP server tracking
-                for server in config.mcpServerDetails {
-                    let envSummary = server.envVars.keys.sorted().joined(separator: ",")
-                    database.upsertMCPServer(
-                        toolID: toolID,
-                        serverName: server.name,
-                        command: server.command,
-                        envVars: envSummary
-                    )
+            // Persist to database (background thread)
+            if let db {
+                for entry in adapterSessions {
+                    for session in entry.sessions {
+                        db.persistSession(session, toolID: entry.toolID)
+                    }
                 }
+
+                for config in configs {
+                    let toolID = AIInventoryEntry.toolID(from: config.tool)
+                    let snapshot = Self.buildConfigSnapshotJSON(config)
+                    let hash = "a:\(config.permissions.totalAllowed)|d:\(config.permissions.totalDenied)|q:\(config.permissions.totalAsk)"
+                    db.insertConfigSnapshot(
+                        toolID: toolID, configJSON: snapshot,
+                        layersCount: config.layers.count, permissionsHash: hash
+                    )
+                    for server in config.mcpServerDetails {
+                        let envSummary = server.envVars.keys.sorted().joined(separator: ",")
+                        db.upsertMCPServer(toolID: toolID, serverName: server.name,
+                                           command: server.command, envVars: envSummary)
+                    }
+                }
+            }
+
+            // Run risk detection with pre-computed data (no re-parsing)
+            let result = AISecurityEngine.scan(
+                sessions: allSessions, configs: configs, database: db
+            )
+
+            if let db {
+                db.saveSecurityFindings(result.signals)
+                db.saveRiskSignals(result.signals)
+            }
+
+            // Update UI state on main actor
+            await MainActor.run {
+                self.securityScanResult = result
+                for config in configs {
+                    self.recordConfiguredTool(config)
+                }
+                self.isScanningSecurity = false
             }
         }
-
-        // Run risk detection across all adapters (pass database for drift detection)
-        let result = AISecurityEngine.scan(sessions: sessions, database: database)
-        securityScanResult = result
-        database?.saveSecurityFindings(result.signals)
-        database?.saveRiskSignals(result.signals)
-
-        isScanningSecurity = false
     }
 
     // MARK: - Config Snapshot Helpers
 
-    private func configSnapshotJSON(_ config: AIToolConfig) -> String {
+    nonisolated private static func buildConfigSnapshotJSON(_ config: AIToolConfig) -> String {
         var dict: [String: Any] = [
             "tool": config.tool,
             "layers": config.layers.map(\.label),
@@ -324,14 +337,6 @@ final class MonitoringStore {
         return json
     }
 
-    private func permissionsHash(_ permissions: PermissionSummary) -> String {
-        let parts = [
-            "a:\(permissions.totalAllowed)",
-            "d:\(permissions.totalDenied)",
-            "q:\(permissions.totalAsk)"
-        ]
-        return parts.joined(separator: "|")
-    }
 
     /// Resolve (dismiss) a risk signal by ID. Removes it from the current scan result
     /// and marks it resolved in the database.

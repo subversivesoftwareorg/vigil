@@ -47,13 +47,16 @@ struct AITimelineModeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
-            var results: [(tool: String, session: AISessionLog)] = []
-            for adapter in AIAdapterRegistry.adapters {
-                let adapterSessions = adapter.parseSessions(projectFilter: nil)
-                for session in adapterSessions {
-                    results.append((tool: adapter.displayName, session: session))
+            let results = await Task.detached {
+                var tagged: [(tool: String, session: AISessionLog)] = []
+                for adapter in AIAdapterRegistry.adapters {
+                    let adapterSessions = adapter.parseSessions(projectFilter: nil)
+                    for session in adapterSessions {
+                        tagged.append((tool: adapter.displayName, session: session))
+                    }
                 }
-            }
+                return tagged
+            }.value
             sessions = results
             isLoading = false
         }

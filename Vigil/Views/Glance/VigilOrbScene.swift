@@ -54,6 +54,7 @@ final class VigilOrbScene: SKScene {
     var onOrbSelected: ((String) -> Void)?
 
     private var orbNodes: [String: SKNode] = [:]
+    private var connectionNodes: [String: SKShapeNode] = [:]
     private var selectedOrbID: String?
     private let centerCategory: UInt32 = 0x1
     private let orbCategory: UInt32 = 0x2
@@ -104,9 +105,11 @@ final class VigilOrbScene: SKScene {
     // MARK: - Build Orbs
 
     private func rebuildOrbs() {
-        // Remove old orbs
+        // Remove old orbs and connections
         for (_, node) in orbNodes { node.removeFromParent() }
         orbNodes.removeAll()
+        for (_, node) in connectionNodes { node.removeFromParent() }
+        connectionNodes.removeAll()
 
         guard !orbData.isEmpty else { return }
 
@@ -256,29 +259,35 @@ final class VigilOrbScene: SKScene {
     // MARK: - Connection Lines
 
     override func update(_ currentTime: TimeInterval) {
-        // Draw connection lines between orbs and their satellites
-        removeChildren(in: children.filter { $0.name == "connection" })
-
         for data in orbData {
             guard let orbNode = orbNodes[data.id] else { continue }
             for satellite in data.satellites {
                 guard let satNode = orbNodes[satellite.id] else { continue }
-                drawConnection(from: orbNode.position, to: satNode.position,
-                              color: data.risk.color, hasRisk: satellite.hasRisk)
+                updateConnection(
+                    key: "\(data.id)|\(satellite.id)",
+                    from: orbNode.position, to: satNode.position,
+                    color: data.risk.color, hasRisk: satellite.hasRisk
+                )
             }
         }
     }
 
-    private func drawConnection(from start: CGPoint, to end: CGPoint, color: NSColor, hasRisk: Bool) {
+    private func updateConnection(key: String, from start: CGPoint, to end: CGPoint,
+                                  color: NSColor, hasRisk: Bool) {
         let path = CGMutablePath()
         path.move(to: start)
         path.addLine(to: end)
-        let line = SKShapeNode(path: path)
-        line.strokeColor = (hasRisk ? NSColor.systemOrange : color).withAlphaComponent(0.25)
-        line.lineWidth = hasRisk ? 1.5 : 1.0
-        line.name = "connection"
-        line.zPosition = -1
-        addChild(line)
+
+        if let existing = connectionNodes[key] {
+            existing.path = path
+        } else {
+            let line = SKShapeNode(path: path)
+            line.strokeColor = (hasRisk ? NSColor.systemOrange : color).withAlphaComponent(0.25)
+            line.lineWidth = hasRisk ? 1.5 : 1.0
+            line.zPosition = -1
+            addChild(line)
+            connectionNodes[key] = line
+        }
     }
 
     // MARK: - Mouse Interaction

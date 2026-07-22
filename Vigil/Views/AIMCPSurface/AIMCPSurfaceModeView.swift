@@ -69,8 +69,11 @@ struct AIMCPSurfaceModeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
-            configs = AIAdapterRegistry.discoverAllConfigs()
-            sessions = AIAdapterRegistry.parseAllSessions()
+            let (c, s) = await Task.detached {
+                (AIAdapterRegistry.discoverAllConfigs(), AIAdapterRegistry.parseAllSessions())
+            }.value
+            configs = c
+            sessions = s
             isLoading = false
         }
     }

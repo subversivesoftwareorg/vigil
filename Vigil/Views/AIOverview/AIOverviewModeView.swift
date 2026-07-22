@@ -36,10 +36,16 @@ struct AIOverviewModeView: View {
     }
 
     private func loadData() async {
-        configs = AIAdapterRegistry.discoverAllConfigs()
-        privacyPostures = MacOSPrivacyReader.readAll()
-        riskSignals = AIAdapterRegistry.detectAllRisks()
-        riskSignals.append(contentsOf: AIRiskEngine.detectPrivacyRisks(postures: privacyPostures))
+        let (loadedConfigs, loadedPostures, loadedRisks) = await Task.detached {
+            let c = AIAdapterRegistry.discoverAllConfigs()
+            let p = MacOSPrivacyReader.readAll()
+            var r = AIAdapterRegistry.detectAllRisks()
+            r.append(contentsOf: AIRiskEngine.detectPrivacyRisks(postures: p))
+            return (c, p, r)
+        }.value
+        configs = loadedConfigs
+        privacyPostures = loadedPostures
+        riskSignals = loadedRisks
         isLoading = false
     }
 

@@ -221,8 +221,14 @@ struct GlanceView: View {
     // MARK: - Data Loading
 
     private func loadData() async {
-        configs = AIAdapterRegistry.discoverAllConfigs()
-        riskSignals = AIAdapterRegistry.detectAllRisks()
+        let loadedConfigs = await Task.detached {
+            AIAdapterRegistry.discoverAllConfigs()
+        }.value
+        let loadedRisks = await Task.detached {
+            AIAdapterRegistry.detectAllRisks()
+        }.value
+        configs = loadedConfigs
+        riskSignals = loadedRisks
 
         // Build orb data from configs
         let orbs = configs.map { config -> OrbData in
