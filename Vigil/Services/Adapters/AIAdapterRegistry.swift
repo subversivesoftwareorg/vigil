@@ -91,6 +91,58 @@ enum AIAdapterRegistry {
         Cache.shared.invalidate()
     }
 
+    // MARK: - Progress-Reporting Scan
+
+    /// One event per adapter as a full scan proceeds, so the UI can narrate
+    /// real work instead of showing an indeterminate spinner.
+    enum ScanEvent {
+        case checking(toolName: String, index: Int, total: Int)
+        case toolFound(config: AIToolConfig, sessionCount: Int)
+        case toolAbsent(toolName: String)
+        case finished(configs: [AIToolConfig], risks: [AISecuritySignal])
+    }
+
+    /// True when a recent scan's results are cached — callers can skip the
+    /// progressive scan and load instantly.
+    static var hasFreshCache: Bool {
+        Cache.shared.hasFreshConfigs
+    }
+
+    /// Runs a full scan off the calling thread, emitting an event per adapter.
+    /// Results are seeded into the shared cache, so views loading afterward
+    /// get cache hits rather than re-scanning.
+    static func scanWithProgress() -> AsyncStream<ScanEvent> {
+        AsyncStream { continuation in
+            Task.detached {
+                var configs: [AIToolConfig] = []
+                var byTool: [String: [AISessionLog]] = [:]
+                let total = adapters.count
+
+                for (index, adapter) in adapters.enumerated() {
+                    continuation.yield(.checking(
+                        toolName: adapter.displayName, index: index + 1, total: total
+                    ))
+                    let config = adapter.readConfig()
+                    let sessions = adapter.parseSessions(projectFilter: nil)
+                    if !sessions.isEmpty {
+                        byTool[adapter.toolID] = sessions
+                    }
+                    if let config {
+                        configs.append(config)
+                        continuation.yield(.toolFound(config: config, sessionCount: sessions.count))
+                    } else {
+                        continuation.yield(.toolAbsent(toolName: adapter.displayName))
+                    }
+                }
+
+                Cache.shared.seed(configs: configs, sessionsByTool: byTool)
+                let risks = Cache.shared.risks()
+                continuation.yield(.finished(configs: configs, risks: risks))
+                continuation.finish()
+            }
+        }
+    }
+
     // MARK: - Shared Utilities
 
     static let modelFileExtensions: Set<String> = [
@@ -189,6 +241,26 @@ extension AIAdapterRegistry {
             cachedRoots[marker] = (result, .now)
             lock.unlock()
             return result
+        }
+
+        // MARK: Seeding
+
+        /// Store externally computed scan results (from scanWithProgress) so
+        /// subsequent reads are cache hits. Risks are cleared to recompute
+        /// from the seeded data on next access.
+        func seed(configs: [AIToolConfig], sessionsByTool: [String: [AISessionLog]]) {
+            lock.lock()
+            defer { lock.unlock() }
+            cachedConfigs = (configs, .now)
+            cachedSessionsByTool = (sessionsByTool, .now)
+            cachedRisks = nil
+        }
+
+        var hasFreshConfigs: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let entry = cachedConfigs else { return false }
+            return Date.now.timeIntervalSince(entry.at) < ttl
         }
 
         // MARK: Invalidation

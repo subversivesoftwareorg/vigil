@@ -5,7 +5,8 @@ struct GlanceView: View {
     @Environment(MonitoringStore.self) private var store
     @State private var configs: [AIToolConfig] = []
     @State private var riskSignals: [AISecuritySignal] = []
-    @State private var isLoading = true
+    @State private var scanPhase: ScanPhase = .idle
+    @State private var lastFound: String = ""
     @State private var selectedOrbID: String = ""
     @State private var scene: VigilOrbScene = {
         let s = VigilOrbScene(size: CGSize(width: 800, height: 500))
@@ -13,6 +14,12 @@ struct GlanceView: View {
         s.scaleMode = .resizeFill
         return s
     }()
+
+    enum ScanPhase: Equatable {
+        case idle
+        case scanning(current: String, done: Int, total: Int)
+        case complete
+    }
 
     // MARK: - Computed
 
@@ -26,33 +33,46 @@ struct GlanceView: View {
     }
 
     private var statusMessage: String {
-        let toolCount = configs.count
-        let warnings = riskSignals.filter { $0.severity == .warning }.count
-        let concerns = riskSignals.filter { $0.severity == .concern }.count
-
-        if warnings > 0 {
-            return "\(warnings) issue\(warnings == 1 ? "" : "s") need\(warnings == 1 ? "s" : "") your attention."
+        switch scanPhase {
+        case .idle:
+            return "Preparing scan..."
+        case .scanning(let current, let done, let total):
+            if current.isEmpty { return "Scanning your system..." }
+            return "Checking \(current)... (\(done) of \(total))"
+        case .complete:
+            let warnings = riskSignals.filter { $0.severity == .warning }.count
+            let concerns = riskSignals.filter { $0.severity == .concern }.count
+            if warnings > 0 {
+                return "\(warnings) issue\(warnings == 1 ? "" : "s") need\(warnings == 1 ? "s" : "") your attention."
+            }
+            if concerns > 0 {
+                return "\(concerns) thing\(concerns == 1 ? "" : "s") worth reviewing."
+            }
+            if configs.isEmpty {
+                return "No AI tools detected — Vigil watches for \(AIAdapterRegistry.adapters.count) of them."
+            }
+            return "Your AI tools look healthy."
         }
-        if concerns > 0 {
-            return "\(concerns) thing\(concerns == 1 ? "" : "s") worth reviewing."
-        }
-        if toolCount == 0 {
-            return "No AI tools detected on your system."
-        }
-        return "Your AI tools look healthy."
     }
 
     private var statusColor: Color {
+        if case .scanning = scanPhase { return .teal }
+        if case .idle = scanPhase { return .teal }
         switch overallRisk {
-        case .healthy: .green
-        case .info: .blue
-        case .concern: .orange
-        case .warning: .red
+        case .healthy: return .green
+        case .info: return .blue
+        case .concern: return .orange
+        case .warning: return .red
         }
     }
 
+    private var isScanning: Bool {
+        if case .scanning = scanPhase { return true }
+        if case .idle = scanPhase { return true }
+        return false
+    }
+
     private var actionCards: [ActionCard] {
-        // Top 3 signals, highest severity first, with plain-English descriptions
         riskSignals
             .filter { $0.severity >= .concern }
             .prefix(3)
@@ -71,7 +91,6 @@ struct GlanceView: View {
     private var selectedOrbDetail: (name: String, detail: String)? {
         guard !selectedOrbID.isEmpty else { return nil }
 
-        // Check if it's a tool
         if let config = configs.first(where: { orbID(for: $0) == selectedOrbID }) {
             let mcpCount = config.mcpServerDetails.count
             let signals = riskSignals.filter { relatedToTool($0, config) }.count
@@ -81,7 +100,6 @@ struct GlanceView: View {
             return (name: config.tool, detail: detail.isEmpty ? "No additional details." : detail)
         }
 
-        // Check if it's an MCP server
         for config in configs {
             if let server = config.mcpServerDetails.first(where: { satelliteID(for: $0, tool: config.tool) == selectedOrbID }) {
                 var parts: [String] = []
@@ -100,52 +118,45 @@ struct GlanceView: View {
 
     var body: some View {
         ZStack {
-            // Dark background gradient
             LinearGradient(
                 colors: [Color(white: 0.06), Color(white: 0.1)],
                 startPoint: .top, endPoint: .bottom
             )
             .ignoresSafeArea()
 
-            if isLoading {
-                ProgressView("Scanning your system...")
-                    .foregroundStyle(.white)
-            } else {
-                VStack(spacing: 0) {
-                    statusBanner
-                        .padding(.horizontal, 24)
-                        .padding(.top, 16)
+            VStack(spacing: 0) {
+                statusBanner
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
 
-                    ZStack {
-                        SpriteView(scene: scene, options: [.allowsTransparency])
-                            .ignoresSafeArea()
+                ZStack {
+                    SpriteView(scene: scene, options: [.allowsTransparency])
+                        .ignoresSafeArea()
 
-                        // Orb detail popover
-                        if let detail = selectedOrbDetail {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(detail.name)
-                                    .font(.callout)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(.white)
-                                Text(detail.detail)
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.7))
-                                    .lineLimit(3)
-                            }
-                            .padding(12)
-                            .frame(maxWidth: 320, alignment: .leading)
-                            .background(.ultraThinMaterial, in: .rect(cornerRadius: 10))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                            .padding(16)
-                            .transition(.opacity)
+                    if let detail = selectedOrbDetail {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(detail.name)
+                                .font(.callout)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.white)
+                            Text(detail.detail)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(3)
                         }
+                        .padding(12)
+                        .frame(maxWidth: 320, alignment: .leading)
+                        .background(.ultraThinMaterial, in: .rect(cornerRadius: 10))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(16)
+                        .transition(.opacity)
                     }
+                }
 
-                    if !actionCards.isEmpty {
-                        actionCardsSection
-                            .padding(.horizontal, 24)
-                            .padding(.bottom, 16)
-                    }
+                if scanPhase == .complete && !actionCards.isEmpty {
+                    actionCardsSection
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 16)
                 }
             }
         }
@@ -163,17 +174,29 @@ struct GlanceView: View {
                 .fill(statusColor)
                 .frame(width: 12, height: 12)
                 .shadow(color: statusColor.opacity(0.6), radius: 6)
+                .modifier(PulseWhileScanning(active: isScanning))
 
             Text(statusMessage)
                 .font(.title3)
                 .fontWeight(.medium)
                 .foregroundStyle(.white)
+                .contentTransition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: statusMessage)
 
             Spacer()
 
-            Text("\(configs.count) tool\(configs.count == 1 ? "" : "s")")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.5))
+            if isScanning {
+                if !lastFound.isEmpty {
+                    Text("Found \(lastFound)")
+                        .font(.caption)
+                        .foregroundStyle(.teal)
+                        .transition(.opacity)
+                }
+            } else {
+                Text("\(configs.count) tool\(configs.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
@@ -221,57 +244,102 @@ struct GlanceView: View {
     // MARK: - Data Loading
 
     private func loadData() async {
-        let loadedConfigs = await Task.detached {
-            AIAdapterRegistry.discoverAllConfigs()
-        }.value
-        let loadedRisks = await Task.detached {
-            AIAdapterRegistry.detectAllRisks()
-        }.value
-        configs = loadedConfigs
-        riskSignals = loadedRisks
+        guard scanPhase == .idle else { return }
 
-        // Build orb data from configs
-        let orbs = configs.map { config -> OrbData in
-            let toolSignals = riskSignals.filter { relatedToTool($0, config) }
-            let maxSeverity = toolSignals.map(\.severity).max()
-
-            let risk: OrbData.RiskLevel = switch maxSeverity {
-            case .warning: .warning
-            case .concern: .concern
-            case .info: .info
-            default: .healthy
-            }
-
-            let mcpCount = config.mcpServerDetails.count
-            let activity = min(1.0, Double(mcpCount + config.layers.count) / 8.0)
-
-            let satellites = config.mcpServerDetails.map { server in
-                let serverHasRisk = riskSignals.contains { signal in
-                    signal.category == .mcpRisk && signal.detail.contains(server.name)
-                }
-                return SatelliteData(
-                    id: satelliteID(for: server, tool: config.tool),
-                    label: abbreviate(server.name),
-                    hasRisk: serverHasRisk || !server.autoApprovedTools.isEmpty
-                )
-            }
-
-            return OrbData(
-                id: orbID(for: config),
-                label: abbreviate(config.tool),
-                risk: risk,
-                activity: activity,
-                satellites: satellites
-            )
-        }
-
-        scene.orbData = orbs
         scene.onOrbSelected = { id in
             withAnimation(.easeInOut(duration: 0.2)) {
                 selectedOrbID = id
             }
         }
-        isLoading = false
+
+        // Warm cache: load instantly, orbs arrive with a light stagger
+        if AIAdapterRegistry.hasFreshCache {
+            let (loadedConfigs, loadedRisks) = await Task.detached {
+                (AIAdapterRegistry.discoverAllConfigs(), AIAdapterRegistry.detectAllRisks())
+            }.value
+            configs = loadedConfigs
+            riskSignals = loadedRisks
+            scene.setOrbs(loadedConfigs.map { makeOrb($0, risks: loadedRisks) })
+            scanPhase = .complete
+            return
+        }
+
+        // Cold cache: the scan is the show
+        scanPhase = .scanning(current: "", done: 0, total: AIAdapterRegistry.adapters.count)
+        scene.beginScanEffect()
+
+        for await event in AIAdapterRegistry.scanWithProgress() {
+            switch event {
+            case .checking(let toolName, let index, let total):
+                scanPhase = .scanning(current: toolName, done: index, total: total)
+
+            case .toolFound(let config, let sessionCount):
+                configs.append(config)
+                withAnimation {
+                    lastFound = sessionCount > 0
+                        ? "\(config.tool) · \(sessionCount) session\(sessionCount == 1 ? "" : "s")"
+                        : config.tool
+                }
+                // Provisional neutral color; recolored when risks land
+                scene.addOrb(makeOrb(config, risks: nil))
+
+            case .toolAbsent:
+                break
+
+            case .finished(let allConfigs, let risks):
+                configs = allConfigs
+                riskSignals = risks
+                scene.endScanEffect()
+                for config in allConfigs {
+                    scene.updateRisk(
+                        id: orbID(for: config),
+                        risk: riskLevel(for: config, risks: risks)
+                    )
+                }
+                withAnimation { scanPhase = .complete }
+            }
+        }
+    }
+
+    // MARK: - Orb Building
+
+    private func riskLevel(for config: AIToolConfig, risks: [AISecuritySignal]) -> OrbData.RiskLevel {
+        let toolSignals = risks.filter { relatedToTool($0, config) }
+        switch toolSignals.map(\.severity).max() {
+        case .warning: return .warning
+        case .concern: return .concern
+        case .info: return .info
+        default: return .healthy
+        }
+    }
+
+    /// Build orb data for a config. Pass `risks: nil` while a scan is in
+    /// flight — the orb spawns in a neutral color and is recolored when
+    /// final risk levels arrive.
+    private func makeOrb(_ config: AIToolConfig, risks: [AISecuritySignal]?) -> OrbData {
+        let risk: OrbData.RiskLevel = risks.map { riskLevel(for: config, risks: $0) } ?? .info
+
+        let mcpCount = config.mcpServerDetails.count
+        let activity = min(1.0, Double(mcpCount + config.layers.count) / 8.0)
+
+        let satellites = config.mcpServerDetails.map { server in
+            let serverHasRisk = (risks ?? []).contains { signal in
+                signal.category == .mcpRisk && signal.detail.contains(server.name)
+            }
+            return SatelliteData(
+                id: satelliteID(for: server, tool: config.tool),
+                label: abbreviate(server.name),
+                hasRisk: serverHasRisk || !server.autoApprovedTools.isEmpty
+            )
+        }
+
+        return OrbData(
+            id: orbID(for: config),
+            label: abbreviate(config.tool),
+            risk: risk,
+            activity: activity,
+            satellites: satellites
+        )
     }
 
     // MARK: - Helpers
@@ -317,6 +385,27 @@ struct GlanceView: View {
         case .supplyChain: return "Pin versions"
         default: return "Review"
         }
+    }
+}
+
+// MARK: - Pulse Modifier
+
+/// Gentle opacity pulse on the status dot while scanning.
+private struct PulseWhileScanning: ViewModifier {
+    let active: Bool
+    @State private var dimmed = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(active && dimmed ? 0.35 : 1.0)
+            .animation(
+                active ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true) : .default,
+                value: dimmed
+            )
+            .onAppear { if active { dimmed = true } }
+            .onChange(of: active) { _, isActive in
+                dimmed = isActive
+            }
     }
 }
 
