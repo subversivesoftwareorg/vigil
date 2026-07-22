@@ -126,11 +126,14 @@ One view answering "what is allowed to act on my machine, when, and with what sc
 - [x] Unattended agent discovery: Cowork `scheduled-tasks.json` (cron, folder grants, Chrome domain allowlists, permission modes) + crontab entries invoking AI CLIs headlessly
 - [x] Unattended agent risk rules: browser automation without supervision, self-modifying schedules, package installation, headless no-prompt invocations
 - [x] Unattended Agents section in AI Overview
-- [ ] Per-MCP-tool grant inventory: connect `mcp__server__tool` entries in settings allow-lists back to their servers in the MCP view
-- [ ] Codex sandbox policy display: per-thread `writableRoots`, `networkAccess`, `approvalPolicy` from `.codex-global-state.json`
+- [x] Per-MCP-tool grant inventory: `mcp__server__tool` allow-list entries connected to their servers in ledger entries
+- [x] Codex sandbox policy display: per-thread `writableRoots`, `networkAccess`, `approvalPolicy` from `.codex-global-state.json`
+- [x] Unified ledger view: every principal (tool, agent, scheduled task, cron job, MCP server) with file scope, shell/network/browser capability, schedule, and approval mode — new "Capability Ledger" sidebar view
+- [x] Check coverage matrix: per-tool × per-dimension (config/sessions/risks/MCP/permissions/schedules) coverage levels, independent of what's installed on this machine, with presence indicator; completeness enforced by test
+- [x] Visibility map: risk surfaces including Vigil's blind spots (browser AI usage, network egress content, clipboard flows, enforcement), each gap attributed to a companion tool (Prism = browser, Tapped = network, Harden = enforcement)
 - [ ] Permission decision trail: parse Cowork audit-log `permission_request`/`permission_response` pairs (HMAC-signed) to show what was asked and granted per session
 - [ ] SKILL.md capability parsing for scheduled tasks (structured, beyond keyword heuristics)
-- [ ] Unified ledger view: every principal (tool, agent, scheduled task, cron job, MCP server) with file scope, shell/network/browser capability, schedule, and approval mode
+- [ ] Multi-tool visibility integration: shared schema or export so Prism/Tapped/Harden findings can appear alongside Vigil's in one posture view
 
 ### Remediation Guidance
 - [ ] Attach remediation steps to each risk signal category (e.g., "Pin this npx package by adding @version")

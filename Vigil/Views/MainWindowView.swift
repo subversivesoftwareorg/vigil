@@ -89,6 +89,7 @@ struct MainWindowView: View {
 
                 Section("AI Security") {
                     sidebarItem(.aiPermissions)
+                    sidebarItem(.aiLedger)
                     sidebarItem(.aiSecurity)
                     sidebarItem(.aiMCPSurface)
                     sidebarItem(.aiInventory)
@@ -115,6 +116,8 @@ struct MainWindowView: View {
                 AITimelineModeView()
             case .aiPermissions:
                 AIPermissionsMatrixView()
+            case .aiLedger:
+                CapabilityLedgerView()
             case .aiMCPSurface:
                 AIMCPSurfaceModeView()
             case .aiActivity:
@@ -159,6 +162,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
     case aiTimeline
     case aiLogs
     case aiPermissions
+    case aiLedger
     case aiSecurity
     case aiMCPSurface
     case aiInventory
@@ -177,6 +181,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .aiTimeline: "Agent Timeline"
         case .aiLogs: "AI Logs"
         case .aiPermissions: "Permissions"
+        case .aiLedger: "Capability Ledger"
         case .aiSecurity: "Risk Signals"
         case .aiMCPSurface: "MCP & Rules"
         case .aiInventory: "AI Inventory"
@@ -195,6 +200,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .aiTimeline: "clock.arrow.2.circlepath"
         case .aiLogs: "note.text"
         case .aiPermissions: "lock.shield"
+        case .aiLedger: "tablecells"
         case .aiSecurity: "shield.lefthalf.filled.badge.checkmark"
         case .aiMCPSurface: "server.rack"
         case .aiInventory: "list.bullet.clipboard"

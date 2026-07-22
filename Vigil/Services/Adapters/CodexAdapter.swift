@@ -122,7 +122,49 @@ struct CodexAdapter: AIToolAdapter {
         )
         config.mcpServerDetails = mcpDetails
         config.promptSurfaces = promptSurfaces
+        applySandboxPolicies(to: &config, home: home)
         return config
+    }
+
+    /// Read persisted per-thread sandbox policies from Codex global state.
+    /// Union across threads: any writable root counts, any network grant counts.
+    private func applySandboxPolicies(to config: inout AIToolConfig, home: String) {
+        let statePath = "\(home)/.codex/.codex-global-state.json"
+        guard let data = FileManager.default.contents(atPath: statePath),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let threadPerms = json["heartbeat-thread-permissions-by-id"] as? [String: Any],
+              !threadPerms.isEmpty else {
+            return
+        }
+
+        var writableRoots = Set<String>()
+        var networkAccess = false
+        var approvalPolicy: String?
+        var sandboxType: String?
+
+        for (_, value) in threadPerms {
+            guard let perms = value as? [String: Any] else { continue }
+            if let policy = perms["approvalPolicy"] as? String {
+                approvalPolicy = policy
+            }
+            if let sandbox = perms["sandboxPolicy"] as? [String: Any] {
+                sandboxType = sandbox["type"] as? String ?? sandboxType
+                if let roots = sandbox["writableRoots"] as? [String] {
+                    writableRoots.formUnion(roots)
+                }
+                if (sandbox["networkAccess"] as? Bool) == true {
+                    networkAccess = true
+                }
+            }
+        }
+
+        if let sandboxType {
+            config.sandboxMode = writableRoots.isEmpty
+                ? sandboxType
+                : "\(sandboxType): \(writableRoots.sorted().joined(separator: ", "))"
+        }
+        config.networkAccess = networkAccess
+        config.approvalMode = approvalPolicy
     }
 
     // MARK: - Session Parsing
