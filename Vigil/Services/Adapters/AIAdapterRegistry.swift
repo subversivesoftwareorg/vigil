@@ -63,28 +63,29 @@ enum AIAdapterRegistry {
         return nil
     }
 
-    // MARK: - Config Discovery (Cached)
+    // MARK: - Cached Aggregate Queries
 
     static func discoverAllConfigs() -> [AIToolConfig] {
         Cache.shared.configs()
     }
 
-    // MARK: - Session Parsing (Cached)
+    /// Sessions grouped by the toolID of the adapter that parsed them.
+    /// This is the primary cached structure — use it whenever session→tool
+    /// attribution is needed, instead of re-parsing to match IDs.
+    static func parseAllSessionsByTool() -> [String: [AISessionLog]] {
+        Cache.shared.sessionsByTool()
+    }
 
     static func parseAllSessions(projectFilter: String? = nil) -> [AISessionLog] {
         if projectFilter != nil {
             return adapters.flatMap { $0.parseSessions(projectFilter: projectFilter) }
         }
-        return Cache.shared.sessions()
+        return Cache.shared.sessionsByTool().values.flatMap { $0 }
     }
-
-    // MARK: - Risk Detection (Cached)
 
     static func detectAllRisks() -> [AISecuritySignal] {
         Cache.shared.risks()
     }
-
-    // MARK: - Cache Invalidation
 
     static func invalidateCache() {
         Cache.shared.invalidate()
@@ -111,90 +112,114 @@ enum AIAdapterRegistry {
 
 extension AIAdapterRegistry {
 
+    /// Time-based cache for the registry's expensive aggregate queries.
+    ///
+    /// Locking rule: the lock is ONLY held to read or write cached values —
+    /// never while computing them. Computation calls back into adapter code
+    /// (readConfig → discoverProjectRoots → projectRoots(marker:)), so holding
+    /// the lock across a compute would self-deadlock on this non-reentrant lock.
+    /// The tradeoff is that two threads racing on a cold cache may both compute;
+    /// the result is identical and the second write is a harmless overwrite.
     final class Cache: @unchecked Sendable {
         static let shared = Cache()
 
         private let lock = NSLock()
         private let ttl: TimeInterval = 30
 
-        private var cachedConfigs: [AIToolConfig]?
-        private var configsTimestamp: Date = .distantPast
+        private var cachedConfigs: (value: [AIToolConfig], at: Date)?
+        private var cachedSessionsByTool: (value: [String: [AISessionLog]], at: Date)?
+        private var cachedRisks: (value: [AISecuritySignal], at: Date)?
+        private var cachedRoots: [String: (value: [String], at: Date)] = [:]
 
-        private var cachedSessions: [AISessionLog]?
-        private var sessionsTimestamp: Date = .distantPast
-
-        private var cachedRisks: [AISecuritySignal]?
-        private var risksTimestamp: Date = .distantPast
-
-        private var cachedProjectRoots: [String: [String]] = [:]
-        private var projectRootsTimestamp: Date = .distantPast
+        // MARK: Configs
 
         func configs() -> [AIToolConfig] {
-            lock.lock()
-            defer { lock.unlock() }
-            if let cached = cachedConfigs, Date.now.timeIntervalSince(configsTimestamp) < ttl {
-                return cached
-            }
-            let result = adapters.compactMap { $0.readConfig() }
-            cachedConfigs = result
-            configsTimestamp = .now
+            if let hit = readCache({ $0.cachedConfigs }) { return hit }
+            let result = AIAdapterRegistry.adapters.compactMap { $0.readConfig() }
+            writeCache { $0.cachedConfigs = (result, .now) }
             return result
         }
 
-        func sessions() -> [AISessionLog] {
-            lock.lock()
-            defer { lock.unlock() }
-            if let cached = cachedSessions, Date.now.timeIntervalSince(sessionsTimestamp) < ttl {
-                return cached
+        // MARK: Sessions (grouped by toolID)
+
+        func sessionsByTool() -> [String: [AISessionLog]] {
+            if let hit = readCache({ $0.cachedSessionsByTool }) { return hit }
+            var result: [String: [AISessionLog]] = [:]
+            for adapter in AIAdapterRegistry.adapters {
+                let sessions = adapter.parseSessions(projectFilter: nil)
+                if !sessions.isEmpty {
+                    result[adapter.toolID] = sessions
+                }
             }
-            let result = adapters.flatMap { $0.parseSessions(projectFilter: nil) }
-            cachedSessions = result
-            sessionsTimestamp = .now
+            writeCache { $0.cachedSessionsByTool = (result, .now) }
             return result
         }
+
+        // MARK: Risks
 
         func risks() -> [AISecuritySignal] {
-            lock.lock()
-            defer { lock.unlock() }
-            if let cached = cachedRisks, Date.now.timeIntervalSince(risksTimestamp) < ttl {
-                return cached
-            }
+            if let hit = readCache({ $0.cachedRisks }) { return hit }
+            // Reuse the cached configs and sessions — do not re-read per adapter
+            let configs = configs()
+            let byTool = sessionsByTool()
             var signals: [AISecuritySignal] = []
-            for adapter in adapters {
-                let config = adapter.readConfig()
-                let adapterSessions = adapter.parseSessions(projectFilter: nil)
-                signals.append(contentsOf: adapter.detectRisks(sessions: adapterSessions, config: config))
+            for adapter in AIAdapterRegistry.adapters {
+                let config = configs.first { $0.tool == adapter.displayName }
+                let sessions = byTool[adapter.toolID] ?? []
+                signals.append(contentsOf: adapter.detectRisks(sessions: sessions, config: config))
             }
             let result = signals.sorted { $0.severity > $1.severity }
-            cachedRisks = result
-            risksTimestamp = .now
+            writeCache { $0.cachedRisks = (result, .now) }
             return result
         }
+
+        // MARK: Project Roots
 
         func projectRoots(marker: String) -> [String] {
             lock.lock()
-            defer { lock.unlock() }
-            if let cached = cachedProjectRoots[marker],
-               Date.now.timeIntervalSince(projectRootsTimestamp) < ttl {
-                return cached
+            if let cached = cachedRoots[marker], Date.now.timeIntervalSince(cached.at) < ttl {
+                lock.unlock()
+                return cached.value
             }
+            lock.unlock()
+
             let result = Self.scanProjectRoots(marker: marker)
-            cachedProjectRoots[marker] = result
-            if cachedProjectRoots.count == 1 {
-                projectRootsTimestamp = .now
-            }
+
+            lock.lock()
+            cachedRoots[marker] = (result, .now)
+            lock.unlock()
             return result
         }
+
+        // MARK: Invalidation
 
         func invalidate() {
             lock.lock()
             defer { lock.unlock() }
             cachedConfigs = nil
-            cachedSessions = nil
+            cachedSessionsByTool = nil
             cachedRisks = nil
-            cachedProjectRoots.removeAll()
-            projectRootsTimestamp = .distantPast
+            cachedRoots.removeAll()
         }
+
+        // MARK: Lock Helpers
+
+        private func readCache<T>(_ get: (Cache) -> (value: T, at: Date)?) -> T? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let entry = get(self), Date.now.timeIntervalSince(entry.at) < ttl else {
+                return nil
+            }
+            return entry.value
+        }
+
+        private func writeCache(_ set: (Cache) -> Void) {
+            lock.lock()
+            defer { lock.unlock() }
+            set(self)
+        }
+
+        // MARK: Filesystem Scan
 
         private static func scanProjectRoots(marker: String) -> [String] {
             let home = FileManager.default.homeDirectoryForCurrentUser.path

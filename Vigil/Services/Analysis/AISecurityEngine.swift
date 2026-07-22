@@ -4,17 +4,19 @@ import Foundation
 /// plus cross-tool analysis from AIRiskEngine.
 enum AISecurityEngine {
 
-    /// Full scan using pre-computed configs and sessions (no redundant I/O).
-    static func scan(sessions: [AISessionLog], configs: [AIToolConfig],
+    /// Full scan using pre-computed data. `sessionsByTool` maps adapter toolID →
+    /// that adapter's parsed sessions, so per-adapter detection never re-parses
+    /// anything to attribute sessions.
+    static func scan(sessionsByTool: [String: [AISessionLog]],
+                     configs: [AIToolConfig],
                      database: Database? = nil) -> AISecurityScanResult {
+        let sessions = sessionsByTool.values.flatMap { $0 }
         var signals: [AISecuritySignal] = []
 
-        // Per-adapter risk detection using pre-computed data
+        // Per-adapter risk detection
         for adapter in AIAdapterRegistry.adapters {
             let config = configs.first { $0.tool == adapter.displayName }
-            let adapterSessions = sessions.filter { session in
-                adapter.parseSessions(projectFilter: nil).contains { $0.id == session.id }
-            }
+            let adapterSessions = sessionsByTool[adapter.toolID] ?? []
             signals.append(contentsOf: adapter.detectRisks(sessions: adapterSessions, config: config))
         }
 
@@ -30,8 +32,7 @@ enum AISecurityEngine {
         signals.append(contentsOf: AIRiskEngine.detectConfigDrift(configs: configs, database: database))
 
         // Tool description injection scanning (Claude Desktop tool schemas)
-        let desktopAdapter = ClaudeDesktopAdapter()
-        let toolDefinitions = desktopAdapter.discoverToolDefinitions()
+        let toolDefinitions = ClaudeDesktopAdapter().discoverToolDefinitions()
         signals.append(contentsOf: AIRiskEngine.detectToolDescriptionInjection(toolDefinitions: toolDefinitions))
 
         // Deduplicate by title + evidence
@@ -51,9 +52,12 @@ enum AISecurityEngine {
         )
     }
 
-    /// Convenience for callers that don't have pre-computed data (e.g., tests).
+    /// Convenience overload for callers with a flat session list (tests, legacy).
+    /// Sessions are attributed to Claude Code for per-session detection, since
+    /// its detectors cover the shared bash/file/exfiltration heuristics.
     static func scan(sessions: [AISessionLog], database: Database? = nil) -> AISecurityScanResult {
-        let configs = AIAdapterRegistry.discoverAllConfigs()
-        return scan(sessions: sessions, configs: configs, database: database)
+        scan(sessionsByTool: ["claude-code": sessions],
+             configs: AIAdapterRegistry.discoverAllConfigs(),
+             database: database)
     }
 }

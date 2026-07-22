@@ -252,27 +252,17 @@ final class MonitoringStore {
         let db = database
 
         Task.detached {
-            // Invalidate cache so we get fresh data
+            // Invalidate cache so we get fresh data; these two calls repopulate
+            // it, so views loading afterward get cache hits instead of re-parsing
             AIAdapterRegistry.invalidateCache()
-
-            // Single pass: read configs and parse sessions once
-            var allSessions: [AISessionLog] = []
-            var adapterSessions: [(toolID: String, sessions: [AISessionLog])] = []
             let configs = AIAdapterRegistry.discoverAllConfigs()
-
-            for adapter in AIAdapterRegistry.adapters {
-                let sessions = adapter.parseSessions(projectFilter: nil)
-                allSessions.append(contentsOf: sessions)
-                if !sessions.isEmpty {
-                    adapterSessions.append((toolID: adapter.toolID, sessions: sessions))
-                }
-            }
+            let sessionsByTool = AIAdapterRegistry.parseAllSessionsByTool()
 
             // Persist to database (background thread)
             if let db {
-                for entry in adapterSessions {
-                    for session in entry.sessions {
-                        db.persistSession(session, toolID: entry.toolID)
+                for (toolID, sessions) in sessionsByTool {
+                    for session in sessions {
+                        db.persistSession(session, toolID: toolID)
                     }
                 }
 
@@ -294,7 +284,7 @@ final class MonitoringStore {
 
             // Run risk detection with pre-computed data (no re-parsing)
             let result = AISecurityEngine.scan(
-                sessions: allSessions, configs: configs, database: db
+                sessionsByTool: sessionsByTool, configs: configs, database: db
             )
 
             if let db {
