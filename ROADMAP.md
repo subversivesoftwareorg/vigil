@@ -89,6 +89,17 @@ Extend adapter depth beyond Claude Code so Vigil provides real visibility across
 - [x] Add risk detection to Cline/Roo adapter (auto-approve, alwaysAllow on MCP servers, MCP risks)
 - [x] Add risk detection to Ollama adapter (network-exposed API)
 
+### Autonomous Agent Frameworks (always-on agents)
+
+Unlike coding assistants, these run persistently with standing permissions and often a messaging-platform control channel — a different (and higher-agency) threat class. Research exact signatures per tool; they evolve quickly.
+
+- [ ] **OpenClaw** (formerly Clawdbot/Moltbot) adapter — detect the gateway process and local port, read config/workspace (`~/.openclaw` and legacy `~/.clawdbot` paths), inventory installed skills, messaging-channel bridges (WhatsApp/Telegram/Discord/iMessage), and exec-approval settings
+- [ ] **NanoClaw** adapter — container-based agent; detect config, mounted host volumes, and which directories the container can touch
+- [ ] **Hermes** adapter — detect install, config, and granted capabilities
+- [ ] Generic agent-daemon heuristics — flag persistent AI processes that combine a network listener + LaunchAgent/daemon persistence + shell exec capability, even for frameworks Vigil has no adapter for yet
+- [ ] Agent-specific risk rules: always-on agency (no human turn in the loop), remote control via messaging platforms, broad filesystem mounts into agent workspaces, credentials stored in agent config/workspace, skills installed from untrusted sources (ClawHub etc.)
+- [ ] Surface always-on agents distinctly in Glance mode (e.g., a persistent-orbit ring or badge — an agent that never sleeps deserves different visual weight than an editor)
+
 ---
 
 ## Milestone 4: UX — Make It Actionable (v1.4)
