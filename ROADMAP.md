@@ -95,6 +95,13 @@ Extend adapter depth beyond Claude Code so Vigil provides real visibility across
 
 Shift from "here's what's happening" to "here's what you should do about it."
 
+### Loading & Progress Experience
+- [ ] Per-adapter scan progress reporting from the registry (AsyncStream of "scanning Claude Code… done, 214 sessions" events)
+- [ ] Glance mode: orbs materialize one-by-one as each tool's scan completes; expanding radar ring sweep while scanning
+- [ ] Advanced mode: skeleton placeholder rows instead of bare spinners
+- [ ] Status banner narrates the scan in plain English ("Checking 12 of 19 tools…")
+- [ ] First-run experience: scanning visual doubles as the "what Vigil does" introduction
+
 ### Search & Filter
 - [ ] Global search across all views (processes, sessions, files, risk signals)
 - [ ] Process list filtering/search
@@ -199,6 +206,13 @@ Long-term capabilities for deeper runtime visibility.
 - [ ] Visualize cross-server data flow paths in MCP view
 - [ ] Supply chain: alert on resolved package version changes between scans
 - [ ] Supply chain: show version history in MCP server card
+
+### Performance (from 2026-07 profiling)
+- [ ] Incremental JSONL session parsing — session files are append-only; remember byte offset per file and parse only new lines instead of re-reading months of history on every scan
+- [ ] Throttle/debounce HeuristicsEngine — currently recomputes on every 2-second process snapshot on the main actor; run at most every N snapshots or move analysis off the main actor
+- [ ] Shared observable AI data store — one load pipeline that views subscribe to, replacing per-view `.task{}` loads (also the natural home for scan progress reporting)
+- [ ] Batch SQLite writes in a transaction during scan persistence (persistSession currently issues dozens of individual statements per session)
+- [ ] Replace SELECT-then-INSERT/UPDATE upserts with single `INSERT ... ON CONFLICT` statements
 
 ---
 
